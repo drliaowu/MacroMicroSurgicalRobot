@@ -1,0 +1,125 @@
+<?xml version="1.0"?>
+<robot name="micro_module">
+
+<material name="blue">
+    <color rgba="0 0 0.8 1"/>
+  </material>
+  <material name="black">
+    <color rgba="0 0 0 1"/>
+  </material>
+  <material name="white">
+    <color rgba="1 1 1 1"/>
+  </material>
+
+<!--Control Box-->
+    <link name="control box">
+        <visual>
+        <geometry>
+            <box size="0.08 0.08 0.08"/>
+        </geometry>
+        <material name="blue"/>
+        </visual>
+    </link>
+
+<!--Steel Tube-->
+
+    <link name="steel_tube">
+        <visual>
+            <origin rpy="1.57075 0 0" xyz="0 0 0"/>
+            <geometry>
+                <cylinder length="0.1" radius="0.035"/>
+            </geometry>
+            <material name="black"/>
+        </visual>
+    </link>
+
+<!--Proximal Base-->
+
+<!--Proximal Modules-->
+
+    <link name="proximal_module_1">
+        <visual>
+            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <geometry>
+                <mesh filename="package://touch_sub/meshes/proximal_module.stl"/>
+            </geometry>
+            <material name="white"/>
+        </visual>
+    </link>
+
+    <link name="proximal_module_2">
+        <visual>
+            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <geometry>
+                <mesh filename="package://touch_sub/meshes/proximal_module.stl"/>
+            </geometry>
+            <material name="white"/>
+        </visual>
+    </link>
+
+    <link name="proximal_module_3">
+        <visual>
+            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <geometry>
+                <mesh filename="package://touch_sub/meshes/proximal_module.stl"/>
+            </geometry>
+            <material name="white"/>
+        </visual>
+    </link>
+
+<!--Proximal-Distal Adaptor-->
+
+    <link name="pd_adaptor_module">
+        <visual>
+            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <geometry>
+                <mesh filename="package://touch_sub/meshes/pd_adaptor_module.stl"/>
+            </geometry>
+            <material name="white"/>
+        </visual>
+    </link>
+
+<!--Distal Modules-->
+
+    <link name="distal_module_1">
+        <visual>
+            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <geometry>
+                <mesh filename="package://touch_sub/meshes/distal_module.stl"/>
+            </geometry>
+            <material name="white"/>
+        </visual>
+    </link>
+
+    <link name="distal_module_2">
+        <visual>
+            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <geometry>
+                <mesh filename="package://touch_sub/meshes/distal_module.stl"/>
+            </geometry>
+            <material name="white"/>
+        </visual>
+    </link>
+
+    <link name="distal_module_3">
+        <visual>
+            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <geometry>
+                <mesh filename="package://touch_sub/meshes/distal_module.stl"/>
+            </geometry>
+            <material name="white"/>
+        </visual>
+    </link>
+
+<!--End Effector-->
+
+    <link name="end_effector">
+        <visual>
+            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <geometry>
+                <mesh filename="package://touch_sub/meshes/distal_module.stl"/>
+            </geometry>
+            <material name="white"/>
+        </visual>
+    </link>
+</robot>
