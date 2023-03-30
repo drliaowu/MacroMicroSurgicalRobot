@@ -12,6 +12,8 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   omni_msgs
+  sensor_msgs
+  tf
 )
 
 ## System dependencies are found with CMake's conventions
@@ -106,7 +108,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES touch_sub
-   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs 
+   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf
 #  DEPENDS system_lib
 )
 
@@ -160,8 +162,7 @@ include_directories(
 
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
-# catkin_install_python(PROGRAMS
-#   scripts/my_python_script
+# catkin_install_python(PROGRAMS src/ur5e_control_py.py
 #   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 # )
 
@@ -208,3 +209,6 @@ include_directories(
 
 add_executable(touch_subscriber src/touch_subscriber.cpp)
 target_link_libraries(touch_subscriber ${catkin_LIBRARIES})
+
+add_executable(ur5e_control src/ur5e_control.cpp)
+target_link_libraries(ur5e_control ${catkin_LIBRARIES})

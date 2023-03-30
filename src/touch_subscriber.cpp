@@ -3,11 +3,18 @@
 #include "ros/ros.h"
 #include "std_msgs/Header.h"
 #include "std_msgs/String.h"
+#include "std_msgs/Int32.h"
 #include "geometry_msgs/Pose.h"
 #include "geometry_msgs/Vector3.h"
 #include "omni_msgs/OmniState.h"
+#include "omni_msgs/OmniButtonEvent.h"
 
-std::string PoseToString(geometry_msgs::Pose pose)
+const bool DEBUG = false;
+
+bool isGreyButtonPressed = false;
+bool isWhiteButtonPressed = false;
+
+std::string TouchPoseToString(geometry_msgs::Pose pose)
 {
     std::stringstream output;
 
@@ -45,20 +52,55 @@ std::string Vector3ToString(geometry_msgs::Vector3 vector3)
     return output.str();
 }
 
-/**
- * This tutorial demonstrates simple receipt of messages over the ROS system.
- */
 void stateCallback(const omni_msgs::OmniState::ConstPtr& omniState)
 {
     geometry_msgs::Pose pose = omniState->pose;
     geometry_msgs::Vector3 current = omniState->current;
     geometry_msgs::Vector3 velocity = omniState->velocity;
 
-    ROS_INFO("Pose: %s, Current: %s, Velocity: %s", 
-        PoseToString(omniState->pose).c_str(), 
-        Vector3ToString(omniState->current).c_str(), 
-        Vector3ToString(omniState->velocity).c_str()
-    );
+    if (DEBUG)
+    {
+        ROS_INFO("Pose: %s, Current: %s, Velocity: %s", 
+            TouchPoseToString(omniState->pose).c_str(), 
+            Vector3ToString(omniState->current).c_str(), 
+            Vector3ToString(omniState->velocity).c_str()
+        );
+    }
+}
+
+void buttonCallback(const omni_msgs::OmniButtonEvent::ConstPtr& omniButtonStates)
+{
+    if (DEBUG)
+    {
+        if ((bool)omniButtonStates->grey_button != isGreyButtonPressed)
+        {
+            std::stringstream output;
+            output << "Grey button "
+                << (isGreyButtonPressed ? "released" : "pressed");
+
+            ROS_INFO(output.str().c_str());
+        }
+
+        if ((bool)omniButtonStates->white_button != isWhiteButtonPressed)
+        {
+            std::stringstream output;
+            output << "White button "
+                << (isWhiteButtonPressed ? "released" : "pressed");
+
+            ROS_INFO(output.str().c_str());
+        }
+    }
+
+    isGreyButtonPressed = (bool)omniButtonStates->grey_button;
+    isWhiteButtonPressed = (bool)omniButtonStates->white_button;
+
+    // int32_t grey_button = omniButtonStates->grey_button;
+    // int32_t white_button = omniButtonStates->white_button;
+
+    // ROS_INFO("Grey button: %d, white button: %d", 
+    //     grey_button, 
+    //     white_button
+    // );
 }
 
 int main(int argc, char **argv)
@@ -67,9 +109,10 @@ int main(int argc, char **argv)
 
     ros::NodeHandle n;
 
-    ros::Subscriber sub = n.subscribe("/phantom/state", 1, stateCallback);
+    // ros::Subscriber sub = n.subscribe("/phantom/state", 1, stateCallback);
+    ros::Subscriber sub = n.subscribe("/phantom/button", 1, buttonCallback);
 
-    ros::Rate rate(1);
+    ros::Rate rate(60);
 
     while (ros::ok())
     {
