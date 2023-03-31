@@ -55,6 +55,10 @@
   <build_depend>omni_msgs</build_depend>
   <build_depend>sensor_msgs</build_depend>
   <build_depend>tf</build_depend>
+  <build_depend>tf2_ros</build_depend>
+  <build_depend>kdl_parser</build_depend>
+  <build_depend>kdl_conversions</build_depend>
+  <build_depend>controller_manager_msgs</build_depend>
 
   <build_export_depend>roscpp</build_export_depend>
   <build_export_depend>rospy</build_export_depend>
@@ -62,6 +66,10 @@
   <build_export_depend>omni_msgs</build_export_depend>
   <build_export_depend>sensor_msgs</build_export_depend>
   <build_export_depend>tf</build_export_depend>
+  <build_export_depend>tf2_ros</build_export_depend>
+  <build_export_depend>kdl_parser</build_export_depend>
+  <build_export_depend>kdl_conversions</build_export_depend>
+  <build_export_depend>controller_manager_msgs</build_export_depend>
 
   <exec_depend>roscpp</exec_depend>
   <exec_depend>rospy</exec_depend>
@@ -69,7 +77,10 @@
   <exec_depend>omni_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>tf</exec_depend>
-
+  <build_export_depend>tf2_ros</build_export_depend>
+  <exec_depend>kdl_parser</exec_depend>
+  <exec_depend>kdl_conversions</exec_depend>
+  <exec_depend>controller_manager_msgs</exec_depend>
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>

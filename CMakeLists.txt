@@ -14,6 +14,10 @@ find_package(catkin REQUIRED COMPONENTS
   omni_msgs
   sensor_msgs
   tf
+  tf2_ros
+  kdl_parser
+  kdl_conversions
+  controller_manager_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -108,7 +112,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES touch_sub
-   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf
+   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf tf2_ros kdl_parser kdl_conversions controller_manager_msgs
 #  DEPENDS system_lib
 )
 
