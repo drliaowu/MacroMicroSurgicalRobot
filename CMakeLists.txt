@@ -13,7 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   omni_msgs
   sensor_msgs
-  tf
+  tf2
   tf2_ros
   kdl_parser
   kdl_conversions
@@ -112,7 +112,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES touch_sub
-   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf tf2_ros kdl_parser kdl_conversions controller_manager_msgs
+   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf2 tf2_ros kdl_parser kdl_conversions controller_manager_msgs
 #  DEPENDS system_lib
 )
 

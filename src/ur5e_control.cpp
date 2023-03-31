@@ -20,7 +20,6 @@
 #include "cartesian_control_msgs/FollowCartesianTrajectoryAction.h"
 #include "cartesian_control_msgs/FollowCartesianTrajectoryGoal.h"
 #include "cartesian_control_msgs/CartesianTrajectoryPoint.h"
-#include <tf/transform_datatypes.h>
 #include "boost/bind.hpp"
 #include "boost/thread.hpp"
 #include <memory>
@@ -29,52 +28,46 @@
 #include <kdl/chainfksolverpos_recursive.hpp>
 #include <kdl/frames_io.hpp>
 #include <tf2_ros/transform_listener.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 // Touch position coordinates are output in millimetres
 const double TOUCH_POSITION_UNIT_SCALE_FACTOR = 1e-3;
 
 // Scale factor for translating stylus motion to robot motion
-const double TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR = 1;
+const double TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR = 0.1;
 
 const int UR5E_JOINT_COUNT = 6;
 
+// The maximum delay, in seconds, from the last pose update of the robot being controlled
 const double MAX_CONTROL_DELAY = 0.1;
+
+const std::string UR5E_CONTROLLER_NAME = "pose_based_cartesian_traj_controller";
 
 typedef actionlib::SimpleActionClient<cartesian_control_msgs::FollowCartesianTrajectoryAction> CartesianActionClient;
 
-bool JointStatesToCartesianPose(const sensor_msgs::JointState::ConstPtr& jointState, const KDL::Chain& chain, geometry_msgs::PoseStamped& cartesianPose)
+struct ControlState
 {
-    KDL::JntArray jointPositions(chain.getNrOfJoints());
+    unsigned int HasRecentTouchPose: 1;
+    unsigned int HasRecentUR5EPose: 1;
+    unsigned int IsWhiteButtonPressed: 1;
+    unsigned int IsGreyButtonPressed: 1;
+};
 
-    for (size_t i = 0; i < jointState->position.size(); ++i) 
-    {
-        jointPositions(i) = jointState->position[i];
-    }
+// Function to convert the stylus quaternion to the robot's frame
+geometry_msgs::Quaternion StylusRotationToRobotFrame(const tf2::Quaternion& stylusToRobotRotation, const geometry_msgs::Quaternion& stylus_quaternion) {
+    tf2::Quaternion stylus_tf_quaternion, robot_tf_quaternion;
 
-    KDL::Frame endEffectorFrame;
-    KDL::ChainFkSolverPos_recursive fkSolver(chain);
-    int kinematicsStatus = fkSolver.JntToCart(jointPositions, endEffectorFrame);
+    // Convert the geometry_msgs::Quaternion to tf2::Quaternion
+    tf2::fromMsg(stylus_quaternion, stylus_tf_quaternion);
 
-    if (kinematicsStatus >= 0)
-    {
-        cartesianPose.header.stamp = ros::Time::now();
-        cartesianPose.header.frame_id = "base_link";
+    // Apply the fixed transformation
+    robot_tf_quaternion = stylusToRobotRotation * stylus_tf_quaternion;
 
-        cartesianPose.pose.position.x = endEffectorFrame.p.x();
-        cartesianPose.pose.position.y = endEffectorFrame.p.y();
-        cartesianPose.pose.position.z = endEffectorFrame.p.z();
+    // Convert the tf2::Quaternion back to geometry_msgs::Quaternion
+    geometry_msgs::Quaternion robot_quaternion = tf2::toMsg(robot_tf_quaternion);
 
-        endEffectorFrame.M.GetQuaternion(
-            cartesianPose.pose.orientation.x,
-            cartesianPose.pose.orientation.y,
-            cartesianPose.pose.orientation.z,
-            cartesianPose.pose.orientation.w
-        );
-        return true;
-    }
-
-    ROS_ERROR("Failed to compute forward kinematics.");
-    return false;
+    return robot_quaternion;
 }
 
 void TransformStampedToPoseStamped(const geometry_msgs::TransformStamped& transformStamped, geometry_msgs::PoseStamped& poseStamped)
@@ -126,55 +119,10 @@ std::string Vector3ToString(geometry_msgs::Vector3 vector3)
     return output.str();
 }
 
-void ur5eJointStateCallback(
-    const sensor_msgs::JointState::ConstPtr& jointState, 
-    const tf2_ros::Buffer& tfBuffer, 
-    geometry_msgs::PoseStamped& cartesianPose
-)
-{
-    // std::stringstream output;
-
-    // output << "UR5e Joint States:\n";
-
-    // for (int i = 0; i < UR5E_JOINT_COUNT; i++)
-    // {
-    //     output << "\tJoint " 
-    //         << i + 1
-    //         << ":\n"
-    //         << "\t\tName: "
-    //         << jointState->name[i]
-    //         << "\n\t\tPosition: "
-    //         << jointState->position[i]
-    //         << "rad\n\t\tVelocity:"
-    //         << jointState->velocity[i]
-    //         << "rad/s\n\t\tEffort:"
-    //         << jointState->effort[i]
-    //         << "N\n\n";
-    // }
-
-    // ROS_INFO_THROTTLE(1, output.str().c_str());
-
-    // JointStatesToCartesianPose(jointState, chain, cartesianPose);
-
-    try
-    {
-        TransformStampedToPoseStamped(tfBuffer.lookupTransform("base_link", "tool0", ros::Time(0)), cartesianPose);
-        geometry_msgs::TransformStamped transform = tfBuffer.lookupTransform("base_link", "tool0", ros::Time(0));
-        // ROS_INFO_THROTTLE(1, "UR5e Cartesian Pose: %s", PoseToString(cartesianPose.pose, 1).c_str());
-        ROS_INFO_THROTTLE(1, "UR5e Cartesian Pose: x: %.3fm, y: %.3fm, z: %.3fm", transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z);
-    }
-    catch (tf2::TransformException& exception)
-    {
-        ROS_WARN_THROTTLE(1, "%s", exception.what());
-        ROS_WARN_THROTTLE(1, "Unable to find UR5e base to TCP transform");
-    }
-
-    // ROS_INFO_THROTTLE(1, "UR5e Cartesian Pose: %s", PoseToString(cartesianPose.pose, 1).c_str());
-}
-
 void touchStateCallback(
     const omni_msgs::OmniState::ConstPtr& omniState, 
     geometry_msgs::PoseStamped& poseStamped,
+    geometry_msgs::Vector3& velocity,
     geometry_msgs::PoseStamped& prevPose
 )
 {
@@ -187,12 +135,15 @@ void touchStateCallback(
     poseStamped.pose = omniState->pose;
 
     // Scale touch position units to metres
-    poseStamped.pose.position.x *= TOUCH_POSITION_UNIT_SCALE_FACTOR;
-    poseStamped.pose.position.y *= TOUCH_POSITION_UNIT_SCALE_FACTOR;
-    poseStamped.pose.position.z *= TOUCH_POSITION_UNIT_SCALE_FACTOR;
+    poseStamped.pose.position.x = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->pose.position.x;
+    poseStamped.pose.position.y = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->pose.position.y;
+    poseStamped.pose.position.z = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->pose.position.z;
+
+    velocity.x = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.x;
+    velocity.y = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.y;
+    velocity.z = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.z;
 
     geometry_msgs::Vector3 current = omniState->current;
-    geometry_msgs::Vector3 velocity = omniState->velocity;
 
     // ROS_INFO_THROTTLE(1, "Touch State:\n\tPose: %s\n\tCurrent: %s\n\tVelocity: %s", 
     //     PoseToString(omniState->pose, TOUCH_POSITION_UNIT_SCALE_FACTOR).c_str(), 
@@ -218,84 +169,74 @@ void touchButtonCallback(
     // );
 }
 
-void DHTableToChain(const std::array<std::array<double, 4>, UR5E_JOINT_COUNT>& dh_table, KDL::Chain& chain) {
-    for (const std::array<double, 4>& params : dh_table) 
-    {
-        double a = params[0];
-        double alpha = params[1];
-        double d = params[2];
-        double theta = params[3];
+bool LoadController(ros::NodeHandle& nodeHandle, const std::string controllerName)
+{
+    // Create a client for the load_controller service
+    ros::ServiceClient loadControllerClient = nodeHandle.serviceClient<controller_manager_msgs::LoadController>("/controller_manager/load_controller");
 
-        KDL::Joint joint(KDL::Joint::RotZ);
-        KDL::Frame frame = KDL::Frame(KDL::Rotation::RPY(0, 0, alpha), KDL::Vector(a, 0, 0)) *
-                           KDL::Frame(KDL::Rotation::RPY(0, 0, 0), KDL::Vector(0, 0, d));
-        chain.addSegment(KDL::Segment(joint, frame));
+    // Create a service request
+    controller_manager_msgs::LoadController loadController;
+    loadController.request.name = controllerName;
+
+    // Call the service to load the controller
+    if (loadControllerClient.call(loadController))
+    {
+        if (loadController.response.ok)
+        {
+            ROS_INFO("Successfully loaded controller: %s", controllerName.c_str());
+            return true;
+        }
+        
+        ROS_ERROR("Failed to load controller: %s", controllerName.c_str());
     }
+    else
+    {
+        ROS_ERROR("Failed to call load_controller service");
+    }
+
+    return false;
 }
 
-void RunTrajectoryClient(
-    const bool& hasFoundUR5ETransform,
-    CartesianActionClient& trajectoryClient,
-    cartesian_control_msgs::FollowCartesianTrajectoryGoal& goal,
-    cartesian_control_msgs::CartesianTrajectoryPoint& targetPoint, 
-    const geometry_msgs::PoseStamped& currentUR5EPose,
-    const geometry_msgs::PoseStamped& currentTouchPose,
-    const geometry_msgs::PoseStamped& prevTouchPose
-    )
+bool SwitchController(ros::NodeHandle& nodeHandle, const std::string controllerName)
 {
-    if (hasFoundUR5ETransform && (ros::Time::now() - currentUR5EPose.header.stamp) <= ros::Duration(MAX_CONTROL_DELAY))
+    ros::ServiceClient switchControllerClient = nodeHandle.serviceClient<controller_manager_msgs::SwitchController>("controller_manager/switch_controller");
+
+    controller_manager_msgs::SwitchController switchController;
+    switchController.request.stop_controllers = ros::V_string 
     {
-        // ROS_INFO_THROTTLE(
-        //     1, 
-        //     "Current Pos: x: %.3f, y: %.3f, z: %.3f\nPrev Pos: x: %.3f, y: %.3f, z: %.3f",
-        //     currentTouchPose.pose.position.x,
-        //     currentTouchPose.pose.position.y,
-        //     currentTouchPose.pose.position.z,
-        //     prevTouchPose.pose.position.x,
-        //     prevTouchPose.pose.position.y,
-        //     prevTouchPose.pose.position.z
-        // );
+        "scaled_pos_joint_traj_controller",
+        "scaled_vel_joint_traj_controller",
+        "pos_joint_traj_controller",
+        "vel_joint_traj_controller",
+        "forward_joint_traj_controller",
+        "joint_based_cartesian_traj_controller",
+        "forward_cartesian_traj_controller",
+        "joint_group_vel_controller", 
+        "twist_controller"
+    };
+    switchController.request.start_controllers.push_back(controllerName);
+    switchController.request.strictness = controller_manager_msgs::SwitchController::Request::BEST_EFFORT;
 
-        targetPoint.pose.position.x = -currentUR5EPose.pose.position.x + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * (currentTouchPose.pose.position.x - prevTouchPose.pose.position.x);
-        targetPoint.pose.position.y = -currentUR5EPose.pose.position.y + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * (currentTouchPose.pose.position.z - prevTouchPose.pose.position.z);
-        targetPoint.pose.position.z = currentUR5EPose.pose.position.z + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * (currentTouchPose.pose.position.y - prevTouchPose.pose.position.y);
+    if (switchControllerClient.call(switchController)) 
+    {
+        ROS_INFO("Controller started");
+        return true;
+    } 
 
-        targetPoint.pose.orientation = currentUR5EPose.pose.orientation;
-
-        ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(targetPoint.pose, 1).c_str());
-        goal.trajectory.points.push_back(targetPoint);
-        trajectoryClient.waitForServer();
-        trajectoryClient.sendGoal(goal);
-        trajectoryClient.waitForResult(ros::Duration(5.0));
-
-        goal.trajectory.points.clear();
-
-        if (trajectoryClient.getState() == actionlib::SimpleClientGoalState::SUCCEEDED)
-            ROS_INFO("Trajectory successfully executed");
-        else
-            ROS_WARN("Failed to execute trajectory or timed out");
-    }
+    ROS_ERROR("Failed to start controller");
+    return false;
 }
 
 int main(int argc, char **argv)
 {
-    // DH parameters sourced from: 
-    // https://www.universal-robots.com/articles/ur/application-installation/dh-parameters-for-calculations-of-kinematics-and-dynamics/
-    std::array<std::array<double, 4>, UR5E_JOINT_COUNT> ur5eDHTable{{
-        {{ 0, 0, 0.1625, M_PI / 2 }},
-        {{ 0, -0.425, 0, 0 }},
-        {{ 0, -0.3922, 0, 0 }},
-        {{ 0, 0, 0.1333, M_PI / 2 }},
-        {{ 0, 0, 0.0997, -M_PI / 2 }},
-        {{ 0, 0, 0.0996, 0 }}
-    }};
-
-    KDL::Chain chain;
-    DHTableToChain(ur5eDHTable, chain);
-
     geometry_msgs::PoseStamped currentUR5EPose;
+    geometry_msgs::Vector3 currentTouchVelocity;
     geometry_msgs::PoseStamped currentTouchPose;
     geometry_msgs::PoseStamped prevTouchPose;
+
+    // Fixed transformation quaternion between stylus and robot frames
+    tf2::Quaternion stylusToRobotRotation;
+    stylusToRobotRotation.setRPY(M_PI_2, M_PI, M_PI); // Replace roll, pitch, and yaw with the fixed rotation angles
 
     prevTouchPose.header.stamp = ros::Time(0);
 
@@ -303,42 +244,12 @@ int main(int argc, char **argv)
 
     ros::NodeHandle nodeHandle;
 
-    std::string controller_name = "pose_based_cartesian_traj_controller";
+    // Load and switch to the desired UR5e position controller
+    LoadController(nodeHandle, UR5E_CONTROLLER_NAME);
 
-    // Create a client for the load_controller service
-    ros::ServiceClient load_controller_client = nodeHandle.serviceClient<controller_manager_msgs::LoadController>("/controller_manager/load_controller");
-
-    // Create a service request
-    controller_manager_msgs::LoadController srv;
-    srv.request.name = controller_name;
-
-    // Call the service to load the controller
-    if (load_controller_client.call(srv))
+    if (!SwitchController(nodeHandle, UR5E_CONTROLLER_NAME))
     {
-        if (srv.response.ok)
-        {
-            ROS_INFO("Successfully loaded controller: %s", controller_name.c_str());
-        }
-        else
-        {
-            ROS_ERROR("Failed to load controller: %s", controller_name.c_str());
-        }
-    }
-    else
-    {
-        ROS_ERROR("Failed to call load_controller service");
-    }
-
-    ros::ServiceClient switch_controller_client = nodeHandle.serviceClient<controller_manager_msgs::SwitchController>("controller_manager/switch_controller");
-
-    controller_manager_msgs::SwitchController switch_controller_srv;
-    switch_controller_srv.request.start_controllers.push_back(controller_name);
-    switch_controller_srv.request.strictness = controller_manager_msgs::SwitchController::Request::STRICT;
-
-    if (switch_controller_client.call(switch_controller_srv)) {
-        ROS_INFO("Controller started");
-    } else {
-        ROS_ERROR("Failed to start controller");
+        return -1;
     }
 
     cartesian_control_msgs::FollowCartesianTrajectoryGoal goal;
@@ -353,19 +264,10 @@ int main(int argc, char **argv)
     bool isGreyButtonPressed = false;
     bool isWhiteButtonPressed = false;
 
-    tf2_ros::Buffer tfBuffer;
-    tf2_ros::TransformListener tfListener(tfBuffer);
-
-    // ros::Subscriber ur5eJointStateSubscriber = nodeHandle.subscribe<sensor_msgs::JointState>(
-    //     "/joint_states",
-    //     1,
-    //     boost::bind(&ur5eJointStateCallback, _1, boost::cref(tfBuffer), boost::ref(currentUR5EPose))
-    // );
-
     ros::Subscriber touchStateSubscriber = nodeHandle.subscribe<omni_msgs::OmniState>(
         "/phantom/state", 
         1, 
-        boost::bind(&touchStateCallback, _1, boost::ref(currentTouchPose), boost::ref(prevTouchPose))
+        boost::bind(&touchStateCallback, _1, boost::ref(currentTouchPose), boost::ref(currentTouchVelocity), boost::ref(prevTouchPose))
     );
 
     ros::Subscriber touchButtonSubscriber = nodeHandle.subscribe<omni_msgs::OmniButtonEvent>(
@@ -374,11 +276,14 @@ int main(int argc, char **argv)
         boost::bind(&touchButtonCallback, _1, boost::ref(isGreyButtonPressed), boost::ref(isWhiteButtonPressed))
     );
 
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener tfListener(tfBuffer);
+
     while (ros::ok())
     {
         try
         {
-            TransformStampedToPoseStamped(tfBuffer.lookupTransform("base_link", "tool0", ros::Time(0)), currentUR5EPose);
+            TransformStampedToPoseStamped(tfBuffer.lookupTransform("base", "tool0", ros::Time(0)), currentUR5EPose);
             hasFoundUR5ETransform = true;
             // ROS_INFO_THROTTLE(1, "UR5e Cartesian Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
         }
@@ -388,7 +293,7 @@ int main(int argc, char **argv)
             ROS_WARN_THROTTLE(1, "Unable to find UR5e base to TCP transform");
         }
 
-        if (hasFoundUR5ETransform && (ros::Time::now() - currentUR5EPose.header.stamp) <= ros::Duration(MAX_CONTROL_DELAY))
+        if (isGreyButtonPressed && hasFoundUR5ETransform && (ros::Time::now() - currentUR5EPose.header.stamp) <= ros::Duration(MAX_CONTROL_DELAY))
         {
             // ROS_INFO_THROTTLE(
             //     1, 
@@ -401,12 +306,14 @@ int main(int argc, char **argv)
             //     prevTouchPose.pose.position.z
             // );
 
-            targetPoint.pose.position.x = -currentUR5EPose.pose.position.x + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * (currentTouchPose.pose.position.x - prevTouchPose.pose.position.x);
-            targetPoint.pose.position.y = -currentUR5EPose.pose.position.y + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * (currentTouchPose.pose.position.z - prevTouchPose.pose.position.z);
-            targetPoint.pose.position.z = currentUR5EPose.pose.position.z + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * (currentTouchPose.pose.position.y - prevTouchPose.pose.position.y);
+            targetPoint.pose.position.x = currentUR5EPose.pose.position.x + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * currentTouchVelocity.x;
+            targetPoint.pose.position.y = currentUR5EPose.pose.position.y + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * currentTouchVelocity.y;
+            targetPoint.pose.position.z = currentUR5EPose.pose.position.z + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * currentTouchVelocity.z;
 
-            targetPoint.pose.orientation = currentUR5EPose.pose.orientation;
-            targetPoint.time_from_start = ros::Duration(0.1);
+            targetPoint.pose.orientation = StylusRotationToRobotFrame(stylusToRobotRotation, currentTouchPose.pose.orientation);
+            // ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(targetPoint.pose, 1).c_str());
+            // ROS_INFO_THROTTLE(1, "Current UR5e Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
+            targetPoint.time_from_start = ros::Duration(0.01);
 
             ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(targetPoint.pose, 1).c_str());
             goal.trajectory.points.push_back(targetPoint);
@@ -417,9 +324,13 @@ int main(int argc, char **argv)
             goal.trajectory.points.clear();
 
             if (trajectoryClient.getState() == actionlib::SimpleClientGoalState::SUCCEEDED)
-                ROS_INFO("Trajectory successfully executed");
+            {
+                ROS_INFO_THROTTLE(1, "Trajectory successfully executed");
+            }
             else
+            {
                 ROS_WARN("Failed to execute trajectory or timed out");
+            }
         }
 
         ros::spinOnce();
