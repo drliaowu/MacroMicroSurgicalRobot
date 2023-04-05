@@ -64,6 +64,10 @@ geometry_msgs::Quaternion StylusRotationToRobotFrame(const tf2::Quaternion& styl
     // Apply the fixed transformation
     robot_tf_quaternion = stylusToRobotRotation * stylus_tf_quaternion;
 
+    // Y and Z axis rotations are inverted between the Touch and UR5e
+    robot_tf_quaternion.setY(-robot_tf_quaternion.getY());
+    robot_tf_quaternion.setZ(-robot_tf_quaternion.getZ());
+
     // Convert the tf2::Quaternion back to geometry_msgs::Quaternion
     geometry_msgs::Quaternion robot_quaternion = tf2::toMsg(robot_tf_quaternion);
 
