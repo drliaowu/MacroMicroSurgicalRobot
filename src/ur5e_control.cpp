@@ -34,8 +34,13 @@
 // Touch position coordinates are output in millimetres
 const double TOUCH_POSITION_UNIT_SCALE_FACTOR = 1e-3;
 
-// Scale factor for translating stylus motion to robot motion
-const double TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR = 0.1;
+// Period in seconds of each UR5e pose control operation
+const double UR5E_CONTROL_PERIOD = 1e-2;
+
+// Number of subdivisions of a single trajectory to send to the UR5E, increase number to improve motion smoothness
+const double UR5E_CONTROL_NUM_SUBDIVISIONS = 10;
+
+const double UR5E_CONTROL_TIME_DELTA = UR5E_CONTROL_PERIOD / UR5E_CONTROL_NUM_SUBDIVISIONS;
 
 const int UR5E_JOINT_COUNT = 6;
 
@@ -54,24 +59,62 @@ struct ControlState
     unsigned int IsGreyButtonPressed: 1;
 };
 
+// Function to calculate the average angular velocity from two timestamped poses and the desired time delta in seconds
+tf2::Quaternion GetAngularVelocity(
+    const geometry_msgs::PoseStamped& prevPose,
+    const geometry_msgs::PoseStamped& currentPose,
+    const double dt
+)
+{
+    // Time difference between the two pose measurements
+    double poseDt = (currentPose.header.stamp - prevPose.header.stamp).toSec();
+
+    // Convert orientations from quaternion messages to tf2 quaternions
+    tf2::Quaternion prevOrientation, currentOrientation;
+    tf2::fromMsg(prevPose.pose.orientation, prevOrientation);
+    tf2::fromMsg(prevPose.pose.orientation, currentOrientation);
+
+    // Obtain the relative rotation quaternion
+    tf2::Quaternion relativeRotation = currentOrientation * prevOrientation.inverse();
+
+    tf2::Vector3 relativeRotationAxis = relativeRotation.getAxis();
+
+    // Calculate angular velocity vector
+    tf2::Vector3 angularVelocity = relativeRotationAxis * (relativeRotation.getAngle() / poseDt);
+
+    double angularVelMagnitude = angularVelocity.length();
+
+    tf2::Vector3 normalisedAngularVelocity = angularVelocity.normalized();
+
+    double halfAngle = angularVelMagnitude * 0.5 * dt;
+    double sinHalfAngle = sin(halfAngle);
+
+    tf2::Vector3 normalisedRelativeRotationAxis = relativeRotationAxis.normalized();
+
+    tf2::Quaternion output = tf2::Quaternion(
+        sinHalfAngle * normalisedRelativeRotationAxis.getX(),
+        sinHalfAngle * normalisedRelativeRotationAxis.getY(),
+        sinHalfAngle * normalisedRelativeRotationAxis.getZ(),
+        cos(halfAngle)
+    );
+
+    return output;
+}
+
 // Function to convert the stylus quaternion to the robot's frame
-geometry_msgs::Quaternion StylusRotationToRobotFrame(const tf2::Quaternion& stylusToRobotRotation, const geometry_msgs::Quaternion& stylus_quaternion) {
-    tf2::Quaternion stylus_tf_quaternion, robot_tf_quaternion;
-
-    // Convert the geometry_msgs::Quaternion to tf2::Quaternion
-    tf2::fromMsg(stylus_quaternion, stylus_tf_quaternion);
-
+tf2::Quaternion StylusRotationToRobotFrame(
+    const tf2::Quaternion& stylusToRobotRotation,
+    const tf2::Quaternion& stylusQuaternion
+)
+{
     // Apply the fixed transformation
-    robot_tf_quaternion = stylusToRobotRotation * stylus_tf_quaternion;
+    tf2::Quaternion robotTfQuaternion = stylusToRobotRotation * stylusQuaternion;
 
     // Y and Z axis rotations are inverted between the Touch and UR5e
-    robot_tf_quaternion.setY(-robot_tf_quaternion.getY());
-    robot_tf_quaternion.setZ(-robot_tf_quaternion.getZ());
+    // robot_tf_quaternion.setY(-robot_tf_quaternion.getY());
+    // robot_tf_quaternion.setZ(-robot_tf_quaternion.getZ());
 
-    // Convert the tf2::Quaternion back to geometry_msgs::Quaternion
-    geometry_msgs::Quaternion robot_quaternion = tf2::toMsg(robot_tf_quaternion);
-
-    return robot_quaternion;
+    return robotTfQuaternion;
 }
 
 void TransformStampedToPoseStamped(const geometry_msgs::TransformStamped& transformStamped, geometry_msgs::PoseStamped& poseStamped)
@@ -124,17 +167,14 @@ std::string Vector3ToString(geometry_msgs::Vector3 vector3)
 }
 
 void touchStateCallback(
-    const omni_msgs::OmniState::ConstPtr& omniState, 
+    const omni_msgs::OmniState::ConstPtr& omniState,
     geometry_msgs::PoseStamped& poseStamped,
-    geometry_msgs::Vector3& velocity,
-    geometry_msgs::PoseStamped& prevPose
+    geometry_msgs::PoseStamped& prevPoseStamped,
+    geometry_msgs::Vector3& translationVelocity,
+    tf2::Quaternion& angularVelocity
 )
 {
-    if ((ros::Time::now() - prevPose.header.stamp) > ros::Duration(0.1))
-    {
-        prevPose = geometry_msgs::PoseStamped(poseStamped);
-    }
-
+    prevPoseStamped = geometry_msgs::PoseStamped(poseStamped);
     poseStamped.header.stamp = ros::Time::now();
     poseStamped.pose = omniState->pose;
 
@@ -143,22 +183,24 @@ void touchStateCallback(
     poseStamped.pose.position.y = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->pose.position.y;
     poseStamped.pose.position.z = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->pose.position.z;
 
-    velocity.x = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.x;
-    velocity.y = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.y;
-    velocity.z = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.z;
+    translationVelocity.x = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.x;
+    translationVelocity.y = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.y;
+    translationVelocity.z = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.z;
+
+    angularVelocity = GetAngularVelocity(prevPoseStamped, poseStamped, UR5E_CONTROL_TIME_DELTA);
 
     geometry_msgs::Vector3 current = omniState->current;
 
-    // ROS_INFO_THROTTLE(1, "Touch State:\n\tPose: %s\n\tCurrent: %s\n\tVelocity: %s", 
-    //     PoseToString(omniState->pose, TOUCH_POSITION_UNIT_SCALE_FACTOR).c_str(), 
-    //     Vector3ToString(omniState->current).c_str(), 
+    // ROS_INFO_THROTTLE(1, "Touch State:\n\tPose: %s\n\tCurrent: %s\n\tVelocity: %s",
+    //     PoseToString(omniState->pose, TOUCH_POSITION_UNIT_SCALE_FACTOR).c_str(),
+    //     Vector3ToString(omniState->current).c_str(),
     //     Vector3ToString(omniState->velocity).c_str()
     // );
 }
 
 void touchButtonCallback(
-    const omni_msgs::OmniButtonEvent::ConstPtr& omniButtonStates, 
-    bool& isGreyButtonPressed, 
+    const omni_msgs::OmniButtonEvent::ConstPtr& omniButtonStates,
+    bool& isGreyButtonPressed,
     bool& isWhiteButtonPressed
 )
 {
@@ -166,9 +208,9 @@ void touchButtonCallback(
     isWhiteButtonPressed = (bool)omniButtonStates->white_button;
 
     // ROS_INFO_THROTTLE(
-    //     1, 
-    //     "Grey button: %d, white button: %d", 
-    //     isGreyButtonPressed, 
+    //     1,
+    //     "Grey button: %d, white button: %d",
+    //     isGreyButtonPressed,
     //     isWhiteButtonPressed
     // );
 }
@@ -190,7 +232,7 @@ bool LoadController(ros::NodeHandle& nodeHandle, const std::string controllerNam
             ROS_INFO("Successfully loaded controller: %s", controllerName.c_str());
             return true;
         }
-        
+
         ROS_ERROR("Failed to load controller: %s", controllerName.c_str());
     }
     else
@@ -206,7 +248,7 @@ bool SwitchController(ros::NodeHandle& nodeHandle, const std::string controllerN
     ros::ServiceClient switchControllerClient = nodeHandle.serviceClient<controller_manager_msgs::SwitchController>("controller_manager/switch_controller");
 
     controller_manager_msgs::SwitchController switchController;
-    switchController.request.stop_controllers = ros::V_string 
+    switchController.request.stop_controllers = ros::V_string
     {
         "scaled_pos_joint_traj_controller",
         "scaled_vel_joint_traj_controller",
@@ -215,17 +257,17 @@ bool SwitchController(ros::NodeHandle& nodeHandle, const std::string controllerN
         "forward_joint_traj_controller",
         "joint_based_cartesian_traj_controller",
         "forward_cartesian_traj_controller",
-        "joint_group_vel_controller", 
+        "joint_group_vel_controller",
         "twist_controller"
     };
     switchController.request.start_controllers.push_back(controllerName);
     switchController.request.strictness = controller_manager_msgs::SwitchController::Request::BEST_EFFORT;
 
-    if (switchControllerClient.call(switchController)) 
+    if (switchControllerClient.call(switchController))
     {
         ROS_INFO("Controller started");
         return true;
-    } 
+    }
 
     ROS_ERROR("Failed to start controller");
     return false;
@@ -234,15 +276,14 @@ bool SwitchController(ros::NodeHandle& nodeHandle, const std::string controllerN
 int main(int argc, char **argv)
 {
     geometry_msgs::PoseStamped currentUR5EPose;
-    geometry_msgs::Vector3 currentTouchVelocity;
+    geometry_msgs::Vector3 currentTouchTranslationVelocity;
+    tf2::Quaternion currentTouchAngularVelocity;
     geometry_msgs::PoseStamped currentTouchPose;
     geometry_msgs::PoseStamped prevTouchPose;
 
     // Fixed transformation quaternion between stylus and robot frames
     tf2::Quaternion stylusToRobotRotation;
     stylusToRobotRotation.setRPY(M_PI_2, M_PI, M_PI); // Replace roll, pitch, and yaw with the fixed rotation angles
-
-    prevTouchPose.header.stamp = ros::Time(0);
 
     ros::init(argc, argv, "touch_subscriber");
 
@@ -260,7 +301,7 @@ int main(int argc, char **argv)
     cartesian_control_msgs::CartesianTrajectoryPoint targetPoint;
 
     CartesianActionClient trajectoryClient(
-        "pose_based_cartesian_traj_controller/follow_cartesian_trajectory", 
+        "pose_based_cartesian_traj_controller/follow_cartesian_trajectory",
         true
     );
 
@@ -269,14 +310,21 @@ int main(int argc, char **argv)
     bool isWhiteButtonPressed = false;
 
     ros::Subscriber touchStateSubscriber = nodeHandle.subscribe<omni_msgs::OmniState>(
-        "/phantom/state", 
-        1, 
-        boost::bind(&touchStateCallback, _1, boost::ref(currentTouchPose), boost::ref(currentTouchVelocity), boost::ref(prevTouchPose))
+        "/phantom/state",
+        1,
+        boost::bind(
+            &touchStateCallback,
+            _1,
+            boost::ref(currentTouchPose),
+            boost::ref(prevTouchPose),
+            boost::ref(currentTouchTranslationVelocity),
+            boost::ref(currentTouchAngularVelocity)
+        )
     );
 
     ros::Subscriber touchButtonSubscriber = nodeHandle.subscribe<omni_msgs::OmniButtonEvent>(
-        "/phantom/button", 
-        1, 
+        "/phantom/button",
+        1,
         boost::bind(&touchButtonCallback, _1, boost::ref(isGreyButtonPressed), boost::ref(isWhiteButtonPressed))
     );
 
@@ -300,7 +348,7 @@ int main(int argc, char **argv)
         if (isGreyButtonPressed && hasFoundUR5ETransform && (ros::Time::now() - currentUR5EPose.header.stamp) <= ros::Duration(MAX_CONTROL_DELAY))
         {
             // ROS_INFO_THROTTLE(
-            //     1, 
+            //     1,
             //     "Current Pos: x: %.3f, y: %.3f, z: %.3f\nPrev Pos: x: %.3f, y: %.3f, z: %.3f",
             //     currentTouchPose.pose.position.x,
             //     currentTouchPose.pose.position.y,
@@ -310,17 +358,25 @@ int main(int argc, char **argv)
             //     prevTouchPose.pose.position.z
             // );
 
-            targetPoint.pose.position.x = currentUR5EPose.pose.position.x + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * currentTouchVelocity.x;
-            targetPoint.pose.position.y = currentUR5EPose.pose.position.y + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * currentTouchVelocity.y;
-            targetPoint.pose.position.z = currentUR5EPose.pose.position.z + TOUCH_CONTROL_MOVEMENT_SCALE_FACTOR * currentTouchVelocity.z;
+            for (int i = 1; i <= UR5E_CONTROL_NUM_SUBDIVISIONS; i++)
+            {
+                targetPoint.pose.position.x = currentUR5EPose.pose.position.x + 10 * UR5E_CONTROL_TIME_DELTA * currentTouchTranslationVelocity.x;
+                targetPoint.pose.position.y = currentUR5EPose.pose.position.y + 10 * UR5E_CONTROL_TIME_DELTA * currentTouchTranslationVelocity.y;
+                targetPoint.pose.position.z = currentUR5EPose.pose.position.z + 10 * UR5E_CONTROL_TIME_DELTA * currentTouchTranslationVelocity.z;
 
-            targetPoint.pose.orientation = StylusRotationToRobotFrame(stylusToRobotRotation, currentTouchPose.pose.orientation);
-            // ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(targetPoint.pose, 1).c_str());
-            // ROS_INFO_THROTTLE(1, "Current UR5e Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
-            targetPoint.time_from_start = ros::Duration(0.01);
+                tf2::Quaternion velocityIncrement, ur5eOrientation;
+                tf2::fromMsg(currentUR5EPose.pose.orientation, ur5eOrientation);
+                velocityIncrement = currentTouchAngularVelocity * UR5E_CONTROL_TIME_DELTA;
+                targetPoint.pose.orientation = tf2::toMsg(ur5eOrientation * StylusRotationToRobotFrame(stylusToRobotRotation, velocityIncrement));
+                // ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(targetPoint.pose, 1).c_str());
+                // ROS_INFO_THROTTLE(1, "Current UR5e Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
+                targetPoint.time_from_start = ros::Duration(i * UR5E_CONTROL_TIME_DELTA);
 
-            ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(targetPoint.pose, 1).c_str());
-            goal.trajectory.points.push_back(targetPoint);
+                goal.trajectory.points.push_back(targetPoint);
+            }
+
+            ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(goal.trajectory.points.back().pose, 1).c_str());
+
             trajectoryClient.waitForServer();
             trajectoryClient.sendGoal(goal);
             trajectoryClient.waitForResult(ros::Duration(5.0));
