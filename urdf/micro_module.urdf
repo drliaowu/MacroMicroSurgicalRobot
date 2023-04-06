@@ -1,115 +1,174 @@
-<?xml version="1.0"?>
 <robot name="micro_module">
 
-<material name="blue">
-    <color rgba="0 0 0.8 1"/>
-  </material>
-  <material name="black">
-    <color rgba="0 0 0 1"/>
-  </material>
-  <material name="white">
-    <color rgba="1 1 1 1"/>
-  </material>
+    <material name="blue">
+        <color rgba="0 0 0.8 1"/>
+    </material>
+    <material name="black">
+        <color rgba="0 0 0 1"/>
+    </material>
+    <material name="white">
+        <color rgba="1 1 1 1"/>
+    </material>
+    <material name="grey">
+        <color rgba="0.45 0.45 0.45 1"/>
+    </material>
 
 <!--Control Box-->
-    <link name="control box">
+    <link name="control_box">
         <visual>
-        <geometry>
-            <box size="0.08 0.08 0.08"/>
-        </geometry>
-        <material name="blue"/>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <box size="0.154 0.114 0.052"/>
+            </geometry>
+            <material name="blue"/>
         </visual>
     </link>
+
+    <joint name="link_control_box:tube_base" type="fixed">
+        <parent link="control_box"/>
+        <child link="tube_base"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
+
+<!--Tube Base-->
+
+    <link name="tube_base">
+        <visual>
+            <origin rpy="-1.570796 0 0" xyz="-0.004 0.057 0.004"/>
+            <geometry>
+                <mesh filename="package://ls_thesis/meshes/tube_base.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+            <material name="white"/>
+        </visual>
+    </link>
+
+    <joint name="link_tube_base:steel_tube" type="fixed">
+        <parent link="tube_base"/>
+        <child link="steel_tube"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
 
 <!--Steel Tube-->
 
     <link name="steel_tube">
         <visual>
-            <origin rpy="1.57075 0 0" xyz="0 0 0"/>
+            <origin rpy="1.570796 0 0" xyz="0 0.182 0"/>
             <geometry>
-                <cylinder length="0.1" radius="0.035"/>
+                <cylinder length="0.25" radius="0.002"/>
             </geometry>
-            <material name="black"/>
+            <material name="grey"/>
         </visual>
     </link>
 
+    <joint name="link_steel_tube:proximal_base" type="fixed">
+        <parent link="steel_tube"/>
+        <child link="proximal_base"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
+
 <!--Proximal Base-->
+
+    <link name="proximal_base">
+        <visual>
+            <origin rpy="0 0 -1.570796" xyz="-0.002 0.312 -0.002"/>
+            <geometry>
+                <mesh filename="package://ls_thesis/meshes/proximal_base.stl" scale="0.001 0.001 0.001"/>
+            </geometry>
+            <material name="white"/>
+        </visual>
+    </link>
+
+    <joint name="link_proximal_base:proximal_module_1" type="fixed">
+        <parent link="proximal_base"/>
+        <child link="proximal_module_1"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
 
 <!--Proximal Modules-->
 
     <link name="proximal_module_1">
         <visual>
-            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <origin rpy="0 0 0" xyz="-0.002 0.3127 -0.002"/>
             <geometry>
-                <mesh filename="package://touch_sub/meshes/proximal_module.stl"/>
+                <mesh filename="package://ls_thesis/meshes/proximal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
             <material name="white"/>
         </visual>
     </link>
+
+    <joint name="link_proximal_module_1:proximal_module_2" type="fixed">
+        <parent link="proximal_module_1"/>
+        <child link="proximal_module_2"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
 
     <link name="proximal_module_2">
         <visual>
-            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <origin rpy="0 0 0" xyz="-0.002 0.3134 -0.002"/>
             <geometry>
-                <mesh filename="package://touch_sub/meshes/proximal_module.stl"/>
+                <mesh filename="package://ls_thesis/meshes/proximal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
             <material name="white"/>
         </visual>
     </link>
 
-    <link name="proximal_module_3">
-        <visual>
-            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
-            <geometry>
-                <mesh filename="package://touch_sub/meshes/proximal_module.stl"/>
-            </geometry>
-            <material name="white"/>
-        </visual>
-    </link>
+    <joint name="link_proximal_module_2:pd_adaptor_module" type="fixed">
+        <parent link="proximal_module_2"/>
+        <child link="pd_adaptor_module"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
 
 <!--Proximal-Distal Adaptor-->
 
     <link name="pd_adaptor_module">
         <visual>
-            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <origin rpy="0 0 0" xyz="-0.002 0.3134 -0.002"/>
             <geometry>
-                <mesh filename="package://touch_sub/meshes/pd_adaptor_module.stl"/>
+                <mesh filename="package://ls_thesis/meshes/pd_adaptor_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
             <material name="white"/>
         </visual>
     </link>
+
+    <joint name="link_pd_adaptor_module:distal_module_1" type="fixed">
+        <parent link="pd_adaptor_module"/>
+        <child link="distal_module_1"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
 
 <!--Distal Modules-->
 
     <link name="distal_module_1">
         <visual>
-            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <origin rpy="0 0 0" xyz="-0.002 0.3134 -0.002"/>
             <geometry>
-                <mesh filename="package://touch_sub/meshes/distal_module.stl"/>
+                <mesh filename="package://ls_thesis/meshes/distal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
             <material name="white"/>
         </visual>
     </link>
+
+    <joint name="link_distal_module_1:distal_module_2" type="fixed">
+        <parent link="distal_module_1"/>
+        <child link="distal_module_2"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
 
     <link name="distal_module_2">
         <visual>
             <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
             <geometry>
-                <mesh filename="package://touch_sub/meshes/distal_module.stl"/>
+                <mesh filename="package://ls_thesis/meshes/distal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
             <material name="white"/>
         </visual>
     </link>
 
-    <link name="distal_module_3">
-        <visual>
-            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
-            <geometry>
-                <mesh filename="package://touch_sub/meshes/distal_module.stl"/>
-            </geometry>
-            <material name="white"/>
-        </visual>
-    </link>
+    <joint name="link_distal_module_2:end_effector" type="fixed">
+        <parent link="distal_module_2"/>
+        <child link="end_effector"/>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+    </joint>
 
 <!--End Effector-->
 
@@ -117,7 +176,7 @@
         <visual>
             <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
             <geometry>
-                <mesh filename="package://touch_sub/meshes/distal_module.stl"/>
+                <mesh filename="package://ls_thesis/meshes/distal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
             <material name="white"/>
         </visual>
