@@ -59,6 +59,41 @@ struct ControlState
     unsigned int IsGreyButtonPressed: 1;
 };
 
+tf2::Quaternion QuaternionExponential(tf2::Quaternion quaternion)
+{
+    tf2::Vector3 vectorComponent(quaternion.getX(), quaternion.getY(), quaternion.getZ());
+
+    double vectorMagnitude = vectorComponent.length();
+    double expW = exp(quaternion.getW());
+
+    tf2::Vector3 expVectorComponent = expW * vectorComponent.normalized() * sin(vectorMagnitude);
+
+    tf2::Quaternion result(
+        expVectorComponent.getX(),
+        expVectorComponent.getY(),
+        expVectorComponent.getZ(),
+        expW * cos(vectorMagnitude)
+    );
+
+    return result;
+}
+
+tf2::Quaternion QuaternionLogarithm(tf2::Quaternion quaternion)
+{
+    tf2::Vector3 vectorComponent(quaternion.getX(), quaternion.getY(), quaternion.getZ());
+
+    double magnitude = quaternion.length();
+
+    tf2::Vector3 logVectorComponent = vectorComponent.normalized() * acos(quaternion.getW() / magnitude);
+
+    tf2::Quaternion result(
+        logVectorComponent.getX(),
+        logVectorComponent.getY(),
+        logVectorComponent.getZ(),
+        log(magnitude)
+    );
+}
+
 // Function to calculate the average angular velocity from two timestamped poses and the desired time delta in seconds
 tf2::Quaternion GetAngularVelocity(
     const geometry_msgs::PoseStamped& prevPose,
@@ -72,31 +107,18 @@ tf2::Quaternion GetAngularVelocity(
     // Convert orientations from quaternion messages to tf2 quaternions
     tf2::Quaternion prevOrientation, currentOrientation;
     tf2::fromMsg(prevPose.pose.orientation, prevOrientation);
-    tf2::fromMsg(prevPose.pose.orientation, currentOrientation);
+    tf2::fromMsg(currentPose.pose.orientation, currentOrientation);
 
-    // Obtain the relative rotation quaternion
-    tf2::Quaternion relativeRotation = currentOrientation * prevOrientation.inverse();
+    tf2::Quaternion diffQuater = currentOrientation * prevOrientation.inverse();
 
-    tf2::Vector3 relativeRotationAxis = relativeRotation.getAxis();
+    tf2::Quaternion prevConjQuaternion;
 
-    // Calculate angular velocity vector
-    tf2::Vector3 angularVelocity = relativeRotationAxis * (relativeRotation.getAngle() / poseDt);
+    prevConjQuaternion.setX(-(diffQuater.x()));
+    prevConjQuaternion.setY(-(diffQuater.y()));
+    prevConjQuaternion.setZ(-(diffQuater.z()));
+    prevConjQuaternion.setW(diffQuater.getW());
 
-    double angularVelMagnitude = angularVelocity.length();
-
-    tf2::Vector3 normalisedAngularVelocity = angularVelocity.normalized();
-
-    double halfAngle = angularVelMagnitude * 0.5 * dt;
-    double sinHalfAngle = sin(halfAngle);
-
-    tf2::Vector3 normalisedRelativeRotationAxis = relativeRotationAxis.normalized();
-
-    tf2::Quaternion output = tf2::Quaternion(
-        sinHalfAngle * normalisedRelativeRotationAxis.getX(),
-        sinHalfAngle * normalisedRelativeRotationAxis.getY(),
-        sinHalfAngle * normalisedRelativeRotationAxis.getZ(),
-        cos(halfAngle)
-    );
+    tf2::Quaternion output = QuaternionExponential(QuaternionLogarithm(diffQuater) / dt) * prevConjQuaternion * 2;
 
     return output;
 }
@@ -110,10 +132,10 @@ geometry_msgs::Quaternion StylusRotationToRobotFrame(const tf2::Quaternion& styl
     // Apply the fixed transformation
     robot_tf_quaternion = stylusToRobotRotation * stylus_tf_quaternion;
 
-    robot_tf_quaternion.setX(-robot_tf_quaternion.getX());
+    // robot_tf_quaternion.setX(-robot_tf_quaternion.getX());
     // robot_tf_quaternion.setY(-robot_tf_quaternion.getY());
     // robot_tf_quaternion.setZ(-robot_tf_quaternion.getZ());
-    robot_tf_quaternion.setW(-robot_tf_quaternion.getW());
+    // robot_tf_quaternion.setW(-robot_tf_quaternion.getW());
 
     // Convert the tf2::Quaternion back to geometry_msgs::Quaternion
     geometry_msgs::Quaternion robot_quaternion = tf2::toMsg(robot_tf_quaternion);
@@ -191,7 +213,11 @@ void touchStateCallback(
     translationVelocity.y = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.y;
     translationVelocity.z = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->velocity.z;
 
+    ROS_INFO_THROTTLE(1, "Current Touch Pose: %s, Prev Touch Pose: %s", PoseToString(poseStamped.pose, 1).c_str(), PoseToString(prevPoseStamped.pose, 1).c_str());
+
     angularVelocity = GetAngularVelocity(prevPoseStamped, poseStamped, UR5E_CONTROL_TIME_DELTA);
+
+    ROS_INFO_THROTTLE(1, "Current Touch Angular Velocity: x: %.3f, y: %.3f, z: %.3f, w: %.3f", angularVelocity.getX(), angularVelocity.getY(), angularVelocity.getZ(), angularVelocity.getW());
 
     geometry_msgs::Vector3 current = omniState->current;
 
@@ -294,12 +320,12 @@ int main(int argc, char **argv)
     ros::NodeHandle nodeHandle;
 
     // Load and switch to the desired UR5e position controller
-    LoadController(nodeHandle, UR5E_CONTROLLER_NAME);
+    // LoadController(nodeHandle, UR5E_CONTROLLER_NAME);
 
-    if (!SwitchController(nodeHandle, UR5E_CONTROLLER_NAME))
-    {
-        return -1;
-    }
+    // if (!SwitchController(nodeHandle, UR5E_CONTROLLER_NAME))
+    // {
+    //     return -1;
+    // }
 
     cartesian_control_msgs::FollowCartesianTrajectoryGoal goal;
     cartesian_control_msgs::CartesianTrajectoryPoint targetPoint;
@@ -337,80 +363,81 @@ int main(int argc, char **argv)
 
     while (ros::ok())
     {
-        try
-        {
-            TransformStampedToPoseStamped(tfBuffer.lookupTransform("base", "tool0", ros::Time(0)), currentUR5EPose);
-            hasFoundUR5ETransform = true;
-            // ROS_INFO_THROTTLE(1, "UR5e Cartesian Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
-        }
-        catch (tf2::TransformException& exception)
-        {
-            ROS_WARN_THROTTLE(1, "%s", exception.what());
-            ROS_WARN_THROTTLE(1, "Unable to find UR5e base to TCP transform");
-        }
+        // try
+        // {
+        //     TransformStampedToPoseStamped(tfBuffer.lookupTransform("base", "tool0_controller", ros::Time(0)), currentUR5EPose);
+        //     hasFoundUR5ETransform = true;
+        //     // ROS_INFO_THROTTLE(1, "UR5e Cartesian Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
+        // }
+        // catch (tf2::TransformException& exception)
+        // {
+        //     ROS_WARN_THROTTLE(1, "%s", exception.what());
+        //     ROS_WARN_THROTTLE(1, "Unable to find UR5e base to TCP transform");
+        // }
 
-        if (isGreyButtonPressed && hasFoundUR5ETransform && (ros::Time::now() - currentUR5EPose.header.stamp) <= ros::Duration(MAX_CONTROL_DELAY))
-        {
-            // ROS_INFO_THROTTLE(
-            //     1,
-            //     "Current Pos: x: %.3f, y: %.3f, z: %.3f\nPrev Pos: x: %.3f, y: %.3f, z: %.3f",
-            //     currentTouchPose.pose.position.x,
-            //     currentTouchPose.pose.position.y,
-            //     currentTouchPose.pose.position.z,
-            //     prevTouchPose.pose.position.x,
-            //     prevTouchPose.pose.position.y,
-            //     prevTouchPose.pose.position.z
-            // );
+        // if (isGreyButtonPressed && hasFoundUR5ETransform && (ros::Time::now() - currentUR5EPose.header.stamp) <= ros::Duration(MAX_CONTROL_DELAY))
+        // {
+        //     // ROS_INFO_THROTTLE(
+        //     //     1,
+        //     //     "Current Pos: x: %.3f, y: %.3f, z: %.3f\nPrev Pos: x: %.3f, y: %.3f, z: %.3f",
+        //     //     currentTouchPose.pose.position.x,
+        //     //     currentTouchPose.pose.position.y,
+        //     //     currentTouchPose.pose.position.z,
+        //     //     prevTouchPose.pose.position.x,
+        //     //     prevTouchPose.pose.position.y,
+        //     //     prevTouchPose.pose.position.z
+        //     // );
 
-            for (int i = 1; i <= UR5E_CONTROL_NUM_SUBDIVISIONS; i++)
-            {
-                targetPoint.pose.position.x = currentUR5EPose.pose.position.x + 50 * UR5E_CONTROL_TIME_DELTA * currentTouchTranslationVelocity.x;
-                targetPoint.pose.position.y = currentUR5EPose.pose.position.y + 50 * UR5E_CONTROL_TIME_DELTA * currentTouchTranslationVelocity.y;
-                targetPoint.pose.position.z = currentUR5EPose.pose.position.z + 50 * UR5E_CONTROL_TIME_DELTA * currentTouchTranslationVelocity.z;
+        //     for (int i = 1; i <= UR5E_CONTROL_NUM_SUBDIVISIONS; i++)
+        //     {
+        //         targetPoint.pose.position.x = currentUR5EPose.pose.position.x - 50 * UR5E_CONTROL_TIME_DELTA * currentTouchTranslationVelocity.y;
+        //         targetPoint.pose.position.y = currentUR5EPose.pose.position.y + 50 * UR5E_CONTROL_TIME_DELTA * currentTouchTranslationVelocity.x;
+        //         targetPoint.pose.position.z = currentUR5EPose.pose.position.z + 50 * UR5E_CONTROL_TIME_DELTA * currentTouchTranslationVelocity.z;
 
-                // tf2::Quaternion velocityIncrement, ur5eOrientation;
-                // tf2::fromMsg(currentUR5EPose.pose.orientation, ur5eOrientation);
-                // velocityIncrement = currentTouchAngularVelocity * UR5E_CONTROL_TIME_DELTA;
-                // targetPoint.pose.orientation = tf2::toMsg(ur5eOrientation * StylusRotationToRobotFrame(stylusToRobotRotation, velocityIncrement));
-                targetPoint.pose.orientation = StylusRotationToRobotFrame(stylusToRobotRotation, currentTouchPose.pose.orientation);
-                // ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(targetPoint.pose, 1).c_str());
-                // ROS_INFO_THROTTLE(1, "Current UR5e Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
-                targetPoint.time_from_start = ros::Duration(i * UR5E_CONTROL_TIME_DELTA);
+        //         tf2::Quaternion velocityIncrement, ur5eOrientation;
+        //         tf2::fromMsg(currentUR5EPose.pose.orientation, ur5eOrientation);
+        //         velocityIncrement = currentTouchAngularVelocity * UR5E_CONTROL_TIME_DELTA;
+        //         targetPoint.pose.orientation = tf2::toMsg(ur5eOrientation * stylusToRobotRotation * velocityIncrement);
+        //         // targetPoint.pose.orientation = StylusRotationToRobotFrame(stylusToRobotRotation, currentTouchPose.pose.orientation);
+        //         // targetPoint.pose.orientation = currentUR5EPose.pose.orientation;
+        //         // ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(targetPoint.pose, 1).c_str());
+        //         // ROS_INFO_THROTTLE(1, "Current UR5e Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
+        //         targetPoint.time_from_start = ros::Duration(i * UR5E_CONTROL_TIME_DELTA);
 
-                goal.trajectory.points.push_back(targetPoint);
-            }
+        //         goal.trajectory.points.push_back(targetPoint);
+        //     }
 
-            ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(goal.trajectory.points.back().pose, 1).c_str());
+        //     ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(goal.trajectory.points.back().pose, 1).c_str());
 
-            trajectoryClient.waitForServer();
-            trajectoryClient.sendGoal(goal);
-            trajectoryClient.waitForResult(ros::Duration(5.0));
+        //     trajectoryClient.waitForServer();
+        //     trajectoryClient.sendGoal(goal);
+        //     trajectoryClient.waitForResult(ros::Duration(5.0));
 
-            try
-            {
-                TransformStampedToPoseStamped(tfBuffer.lookupTransform("base", "tool0", ros::Time(0)), currentUR5EPose);
-                hasFoundUR5ETransform = true;
-                // ROS_INFO_THROTTLE(1, "UR5e Cartesian Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
-            }
-            catch (tf2::TransformException& exception)
-            {
-                ROS_WARN_THROTTLE(1, "%s", exception.what());
-                ROS_WARN_THROTTLE(1, "Unable to find UR5e base to TCP transform");
-            }
+        //     try
+        //     {
+        //         TransformStampedToPoseStamped(tfBuffer.lookupTransform("base", "tool0_controller", ros::Time(0)), currentUR5EPose);
+        //         hasFoundUR5ETransform = true;
+        //         // ROS_INFO_THROTTLE(1, "UR5e Cartesian Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
+        //     }
+        //     catch (tf2::TransformException& exception)
+        //     {
+        //         ROS_WARN_THROTTLE(1, "%s", exception.what());
+        //         ROS_WARN_THROTTLE(1, "Unable to find UR5e base to TCP transform");
+        //     }
 
-            ROS_INFO_THROTTLE(1, "Actual UR5e Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
+        //     ROS_INFO_THROTTLE(1, "Actual UR5e Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
 
-            goal.trajectory.points.clear();
+        //     goal.trajectory.points.clear();
 
-            if (trajectoryClient.getState() == actionlib::SimpleClientGoalState::SUCCEEDED)
-            {
-                ROS_INFO_THROTTLE(1, "Trajectory successfully executed");
-            }
-            else
-            {
-                ROS_WARN("Failed to execute trajectory or timed out");
-            }
-        }
+        //     if (trajectoryClient.getState() == actionlib::SimpleClientGoalState::SUCCEEDED)
+        //     {
+        //         ROS_INFO_THROTTLE(1, "Trajectory successfully executed");
+        //     }
+        //     else
+        //     {
+        //         ROS_WARN("Failed to execute trajectory or timed out");
+        //     }
+        // }
 
         ros::spinOnce();
     }
