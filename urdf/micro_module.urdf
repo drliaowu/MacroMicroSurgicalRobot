@@ -1,8 +1,4 @@
 <robot name="micro_module">
-
-    <material name="blue">
-        <color rgba="0 0 0.8 1"/>
-    </material>
     <material name="black">
         <color rgba="0 0 0 1"/>
     </material>
@@ -12,6 +8,9 @@
     <material name="grey">
         <color rgba="0.45 0.45 0.45 1"/>
     </material>
+    <material name="steel">
+        <color rgba="0.35 0.35 0.35 1"/>
+    </material>
 
 <!--Control Box-->
     <link name="control_box">
@@ -20,7 +19,7 @@
             <geometry>
                 <box size="0.154 0.114 0.052"/>
             </geometry>
-            <material name="blue"/>
+            <material name="grey"/>
         </visual>
     </link>
 
@@ -38,7 +37,7 @@
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/tube_base.stl" scale="0.001 0.001 0.001"/>
             </geometry>
-            <material name="white"/>
+            <material name="black"/>
         </visual>
     </link>
 
@@ -56,7 +55,7 @@
             <geometry>
                 <cylinder length="0.25" radius="0.002"/>
             </geometry>
-            <material name="grey"/>
+            <material name="steel"/>
         </visual>
     </link>
 
@@ -70,7 +69,7 @@
 
     <link name="proximal_base">
         <visual>
-            <origin rpy="0 0 -1.570796" xyz="-0.002 0.312 -0.002"/>
+            <origin rpy="-0.78540 0 -1.570796" xyz="-0.00283 0.312 0"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/proximal_base.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -78,17 +77,18 @@
         </visual>
     </link>
 
-    <joint name="link_proximal_base:proximal_module_1" type="fixed">
+    <joint name="link_proximal_base:proximal_module_1" type="revolute">
         <parent link="proximal_base"/>
         <child link="proximal_module_1"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
+        <axis xyz="0 0 1"/>
     </joint>
 
 <!--Proximal Modules-->
 
     <link name="proximal_module_1">
         <visual>
-            <origin rpy="0 0 0" xyz="-0.002 0.3127 -0.002"/>
+            <origin rpy="-0.78540 0 -1.570796" xyz="-0.00283 0.3134 0"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/proximal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -96,15 +96,16 @@
         </visual>
     </link>
 
-    <joint name="link_proximal_module_1:proximal_module_2" type="fixed">
+    <joint name="link_proximal_module_1:proximal_module_2" type="revolute">
         <parent link="proximal_module_1"/>
         <child link="proximal_module_2"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
+        <axis xyz="0 0 1"/>
     </joint>
 
     <link name="proximal_module_2">
         <visual>
-            <origin rpy="0 0 0" xyz="-0.002 0.3134 -0.002"/>
+            <origin rpy="0.78540 0 -1.570796" xyz="0 0.3148 -0.00283"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/proximal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -112,17 +113,18 @@
         </visual>
     </link>
 
-    <joint name="link_proximal_module_2:pd_adaptor_module" type="fixed">
+    <joint name="link_proximal_module_2:pd_adaptor_module" type="revolute">
         <parent link="proximal_module_2"/>
         <child link="pd_adaptor_module"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
+        <axis xyz="0 0 1"/>
     </joint>
 
 <!--Proximal-Distal Adaptor-->
 
     <link name="pd_adaptor_module">
         <visual>
-            <origin rpy="0 0 0" xyz="-0.002 0.3134 -0.002"/>
+            <origin rpy="0 0 1.570796" xyz="0.002 0.3148 -0.002"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/pd_adaptor_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -130,17 +132,18 @@
         </visual>
     </link>
 
-    <joint name="link_pd_adaptor_module:distal_module_1" type="fixed">
+    <joint name="link_pd_adaptor_module:distal_module_1" type="revolute">
         <parent link="pd_adaptor_module"/>
         <child link="distal_module_1"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
+        <axis xyz="0 0 1"/>
     </joint>
 
 <!--Distal Modules-->
 
     <link name="distal_module_1">
         <visual>
-            <origin rpy="0 0 0" xyz="-0.002 0.3134 -0.002"/>
+            <origin rpy="1.570796 0 -1.570796" xyz="0.002 0.31982 -0.002"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/distal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -148,15 +151,16 @@
         </visual>
     </link>
 
-    <joint name="link_distal_module_1:distal_module_2" type="fixed">
+    <joint name="link_distal_module_1:distal_module_2" type="revolute">
         <parent link="distal_module_1"/>
         <child link="distal_module_2"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
+        <axis xyz="0 0 1"/>
     </joint>
 
     <link name="distal_module_2">
         <visual>
-            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <origin rpy="0 0 -1.570796" xyz="-0.002 0.32271 -0.002"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/distal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -164,19 +168,20 @@
         </visual>
     </link>
 
-    <joint name="link_distal_module_2:end_effector" type="fixed">
+    <joint name="link_distal_module_2:end_effector" type="revolute">
         <parent link="distal_module_2"/>
         <child link="end_effector"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
+        <axis xyz="0 0 1"/>
     </joint>
 
 <!--End Effector-->
 
     <link name="end_effector">
         <visual>
-            <origin rpy="-3.1415 0 0" xyz="0.09137 0.00495 0"/>
+            <origin rpy="0 0 -1.570796" xyz="-0.002 0.3256 -0.002"/>
             <geometry>
-                <mesh filename="package://ls_thesis/meshes/distal_module.stl" scale="0.001 0.001 0.001"/>
+                <mesh filename="package://ls_thesis/meshes/end_effector.stl" scale="0.001 0.001 0.001"/>
             </geometry>
             <material name="white"/>
         </visual>
