@@ -82,6 +82,7 @@
         <child link="proximal_module_1"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <axis xyz="0 0 1"/>
+        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
     </joint>
 
 <!--Proximal Modules-->
@@ -101,6 +102,7 @@
         <child link="proximal_module_2"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <axis xyz="0 0 1"/>
+        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
     </joint>
 
     <link name="proximal_module_2">
@@ -118,6 +120,7 @@
         <child link="pd_adaptor_module"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <axis xyz="0 0 1"/>
+        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
     </joint>
 
 <!--Proximal-Distal Adaptor-->
@@ -137,6 +140,7 @@
         <child link="distal_module_1"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <axis xyz="0 0 1"/>
+        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
     </joint>
 
 <!--Distal Modules-->
@@ -156,6 +160,7 @@
         <child link="distal_module_2"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <axis xyz="0 0 1"/>
+        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
     </joint>
 
     <link name="distal_module_2">
@@ -173,6 +178,7 @@
         <child link="end_effector"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
         <axis xyz="0 0 1"/>
+        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
     </joint>
 
 <!--End Effector-->
