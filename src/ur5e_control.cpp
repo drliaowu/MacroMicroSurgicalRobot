@@ -51,12 +51,10 @@ const std::string UR5E_CONTROLLER_NAME = "pose_based_cartesian_traj_controller";
 
 typedef actionlib::SimpleActionClient<cartesian_control_msgs::FollowCartesianTrajectoryAction> CartesianActionClient;
 
-struct ControlState
+enum ControlType
 {
-    unsigned int HasRecentTouchPose: 1;
-    unsigned int HasRecentUR5EPose: 1;
-    unsigned int IsWhiteButtonPressed: 1;
-    unsigned int IsGreyButtonPressed: 1;
+    Velocity,
+    PoseDelta
 };
 
 tf2::Quaternion QuaternionExponential(tf2::Quaternion quaternion)
@@ -92,6 +90,8 @@ tf2::Quaternion QuaternionLogarithm(tf2::Quaternion quaternion)
         logVectorComponent.getZ(),
         log(magnitude)
     );
+
+    return result;
 }
 
 // Function to calculate the average angular velocity from two timestamped poses and the desired time delta in seconds
@@ -315,7 +315,7 @@ int main(int argc, char **argv)
     tf2::Quaternion stylusToRobotRotation;
     stylusToRobotRotation.setRPY(M_PI_2, M_PI, M_PI); // Replace roll, pitch, and yaw with the fixed rotation angles
 
-    ros::init(argc, argv, "touch_subscriber");
+    ros::init(argc, argv, "ur5e_control");
 
     ros::NodeHandle nodeHandle;
 

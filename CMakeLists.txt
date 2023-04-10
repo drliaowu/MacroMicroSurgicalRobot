@@ -112,7 +112,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES touch_sub
-   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf2 tf2_ros kdl_parser kdl_conversions controller_manager_msgs
+   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf2 tf2_ros kdl_parser kdl_conversions controller_manager_msgs visualization_msgs
 #  DEPENDS system_lib
 )
 
@@ -166,9 +166,9 @@ include_directories(
 
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
-# catkin_install_python(PROGRAMS src/ur5e_control_py.py
-#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+catkin_install_python(PROGRAMS src/android_pose_publisher.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 ## Mark executables for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html
@@ -216,3 +216,6 @@ target_link_libraries(touch_subscriber ${catkin_LIBRARIES})
 
 add_executable(ur5e_control src/ur5e_control.cpp)
 target_link_libraries(ur5e_control ${catkin_LIBRARIES})
+
+add_executable(android_pose_subscriber src/android_pose_subscriber.cpp)
+target_link_libraries(android_pose_subscriber ${catkin_LIBRARIES})
