@@ -23,7 +23,7 @@
         </visual>
     </link>
 
-    <joint name="link_control_box:tube_base" type="fixed">
+    <joint name="joint_control_box:tube_base" type="fixed">
         <parent link="control_box"/>
         <child link="tube_base"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -41,7 +41,7 @@
         </visual>
     </link>
 
-    <joint name="link_tube_base:steel_tube" type="fixed">
+    <joint name="joint_tube_base:steel_tube" type="fixed">
         <parent link="tube_base"/>
         <child link="steel_tube"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -59,7 +59,7 @@
         </visual>
     </link>
 
-    <joint name="link_steel_tube:proximal_base" type="fixed">
+    <joint name="joint_steel_tube:proximal_base" type="fixed">
         <parent link="steel_tube"/>
         <child link="proximal_base"/>
         <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -77,19 +77,19 @@
         </visual>
     </link>
 
-    <joint name="link_proximal_base:proximal_module_1" type="revolute">
+    <joint name="joint_proximal_base:proximal_module_1" type="revolute">
         <parent link="proximal_base"/>
         <child link="proximal_module_1"/>
-        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <origin rpy="-0.78540 0 -1.570796" xyz="0 0.3120 0"/>
         <axis xyz="0 0 1"/>
-        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
+        <limit effort="1000.0" lower="-0.15" upper="0.15" velocity="0.5"/>
     </joint>
 
 <!--Proximal Modules-->
 
     <link name="proximal_module_1">
         <visual>
-            <origin rpy="-0.78540 0 -1.570796" xyz="-0.00283 0.3134 0"/>
+            <origin rpy="0 0 0" xyz="-0.0014 -0.002 -0.002"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/proximal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -97,17 +97,17 @@
         </visual>
     </link>
 
-    <joint name="link_proximal_module_1:proximal_module_2" type="revolute">
+    <joint name="joint_proximal_module_1:proximal_module_2" type="revolute">
         <parent link="proximal_module_1"/>
         <child link="proximal_module_2"/>
-        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <origin rpy="1.570796 0 0" xyz="-0.0014 0 0"/>
         <axis xyz="0 0 1"/>
-        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
+        <limit effort="1000.0" lower="-0.15" upper="0.15" velocity="0.5"/>
     </joint>
 
     <link name="proximal_module_2">
         <visual>
-            <origin rpy="0.78540 0 -1.570796" xyz="0 0.3148 -0.00283"/>
+            <origin rpy="0 0 0" xyz="-0.0014 -0.002 -0.002"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/proximal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -115,19 +115,19 @@
         </visual>
     </link>
 
-    <joint name="link_proximal_module_2:pd_adaptor_module" type="revolute">
+    <joint name="joint_proximal_module_2:pd_adaptor_module" type="revolute">
         <parent link="proximal_module_2"/>
         <child link="pd_adaptor_module"/>
-        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <origin rpy="1.570796 0 0" xyz="-0.0014 0 0"/>
         <axis xyz="0 0 1"/>
-        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
+        <limit effort="1000.0" lower="-0.15" upper="0.15" velocity="0.5"/>
     </joint>
 
 <!--Proximal-Distal Adaptor-->
 
     <link name="pd_adaptor_module">
         <visual>
-            <origin rpy="0 0 1.570796" xyz="0.002 0.3148 -0.002"/>
+            <origin rpy="-0.785398 0 3.14159" xyz="0 0.0028284 0"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/pd_adaptor_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -135,19 +135,19 @@
         </visual>
     </link>
 
-    <joint name="link_pd_adaptor_module:distal_module_1" type="revolute">
+    <joint name="joint_pd_adaptor_module:distal_module_1" type="revolute">
         <parent link="pd_adaptor_module"/>
         <child link="distal_module_1"/>
-        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <origin rpy="0.7854 0 0" xyz="-0.00251 0 0"/>
         <axis xyz="0 0 1"/>
-        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
+        <limit effort="1000.0" lower="-0.6" upper="0.6" velocity="0.5"/>
     </joint>
 
 <!--Distal Modules-->
 
     <link name="distal_module_1">
         <visual>
-            <origin rpy="1.570796 0 -1.570796" xyz="0.002 0.31982 -0.002"/>
+            <origin rpy="1.570796 0 0" xyz="-0.00251 0.002 -0.002"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/distal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -155,17 +155,17 @@
         </visual>
     </link>
 
-    <joint name="link_distal_module_1:distal_module_2" type="revolute">
+    <joint name="joint_distal_module_1:distal_module_2" type="revolute">
         <parent link="distal_module_1"/>
         <child link="distal_module_2"/>
-        <origin rpy="0 0 0" xyz="0 0 0"/>
-        <axis xyz="0 0 1"/>
-        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
+        <origin rpy="0 0 0" xyz="-0.0027 0 0"/>
+        <axis xyz="0 1 0"/>
+        <limit effort="1000.0" lower="-0.6" upper="0.6" velocity="0.5"/>
     </joint>
 
     <link name="distal_module_2">
         <visual>
-            <origin rpy="0 0 -1.570796" xyz="-0.002 0.32271 -0.002"/>
+            <origin rpy="0 0 0" xyz="-0.0027 -0.002 -0.002"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/distal_module.stl" scale="0.001 0.001 0.001"/>
             </geometry>
@@ -173,19 +173,19 @@
         </visual>
     </link>
 
-    <joint name="link_distal_module_2:end_effector" type="revolute">
+    <joint name="joint_distal_module_2:end_effector" type="revolute">
         <parent link="distal_module_2"/>
         <child link="end_effector"/>
-        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <origin rpy="0 0 0" xyz="-0.00275 0 0"/>
         <axis xyz="0 0 1"/>
-        <limit effort="1000.0" lower="0.0" upper="0.548" velocity="0.5"/>
+        <limit effort="1000.0" lower="-0.6" upper="0.6" velocity="0.5"/>
     </joint>
 
 <!--End Effector-->
 
     <link name="end_effector">
         <visual>
-            <origin rpy="0 0 -1.570796" xyz="-0.002 0.3256 -0.002"/>
+            <origin rpy="0 0 0" xyz="-0.00275 -0.002 -0.002"/>
             <geometry>
                 <mesh filename="package://ls_thesis/meshes/end_effector.stl" scale="0.001 0.001 0.001"/>
             </geometry>
