@@ -32,6 +32,24 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <visualization_msgs/Marker.h>
 
+// Touch position coordinates are output in millimetres
+const double TOUCH_POSITION_UNIT_SCALE_FACTOR = 1e-3;
+
+const double EPSILON = 1e-6;
+
+bool IsValidDouble(double value)
+{
+    return !(isnan(value) || abs(value) < EPSILON);
+}
+
+bool IsValidQuaternion(tf2::Quaternion quaternion)
+{
+    return IsValidDouble(quaternion.getX()) &&
+           IsValidDouble(quaternion.getY()) &&
+           IsValidDouble(quaternion.getZ()) &&
+           IsValidDouble(quaternion.getW());
+}
+
 tf2::Quaternion QuaternionExponential(tf2::Quaternion quaternion)
 {
     tf2::Vector3 vectorComponent(quaternion.getX(), quaternion.getY(), quaternion.getZ());
@@ -100,8 +118,7 @@ tf2::Quaternion GetAngularVelocitySimple(
 // Function to calculate the average angular velocity from two timestamped poses and the desired time delta in seconds
 tf2::Quaternion GetAngularVelocity(
     const geometry_msgs::PoseStamped& prevPose,
-    const geometry_msgs::PoseStamped& currentPose,
-    const double dt
+    const geometry_msgs::PoseStamped& currentPose
 )
 {
     // Time difference between the two pose measurements
@@ -112,16 +129,11 @@ tf2::Quaternion GetAngularVelocity(
     tf2::fromMsg(prevPose.pose.orientation, prevOrientation);
     tf2::fromMsg(currentPose.pose.orientation, currentOrientation);
 
-    tf2::Quaternion diffQuater = currentOrientation * prevOrientation.inverse();
+    tf2::Quaternion prevConjQuaternion = prevOrientation.inverse();
 
-    tf2::Quaternion prevConjQuaternion;
+    tf2::Quaternion diffQuater = currentOrientation * prevConjQuaternion;
 
-    prevConjQuaternion.setX(-(diffQuater.x()));
-    prevConjQuaternion.setY(-(diffQuater.y()));
-    prevConjQuaternion.setZ(-(diffQuater.z()));
-    prevConjQuaternion.setW(diffQuater.getW());
-
-    tf2::Quaternion output = QuaternionExponential(QuaternionLogarithm(diffQuater) / poseDt) * prevConjQuaternion * 2;
+    tf2::Quaternion output = QuaternionExponential((QuaternionLogarithm(diffQuater) * 2) / poseDt) * prevConjQuaternion;
 
     return output;
 }
@@ -211,9 +223,40 @@ void poseCallback(
     prevPoseStamped = currentPoseStamped;
     currentPoseStamped = *poseStamped;
 
-    angularVelocity = GetAngularVelocity(prevPoseStamped, currentPoseStamped, 1);
+    angularVelocity = GetAngularVelocity(prevPoseStamped, currentPoseStamped);
     ROS_INFO("Received pose, stamp (%d.%d): %s", poseStamped->header.stamp.sec, poseStamped->header.stamp.nsec, PoseToString(poseStamped->pose, 1).c_str());
     ROS_INFO("Angular velocity: %s", QuaternionToString(angularVelocity).c_str());
+}
+
+void touchStateCallback(
+    const omni_msgs::OmniState::ConstPtr& omniState,
+    geometry_msgs::PoseStamped& poseStamped,
+    geometry_msgs::PoseStamped& prevPoseStamped,
+    tf2::Quaternion& angularVelocity
+)
+{
+    prevPoseStamped = geometry_msgs::PoseStamped(poseStamped);
+    poseStamped.header.stamp = ros::Time::now();
+    poseStamped.pose = omniState->pose;
+
+    // Scale touch position units to metres
+    poseStamped.pose.position.x = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->pose.position.x;
+    poseStamped.pose.position.y = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->pose.position.y;
+    poseStamped.pose.position.z = TOUCH_POSITION_UNIT_SCALE_FACTOR * omniState->pose.position.z;
+
+    ROS_INFO_THROTTLE(1, "Current Touch Pose: %s, Prev Touch Pose: %s", PoseToString(poseStamped.pose, 1).c_str(), PoseToString(prevPoseStamped.pose, 1).c_str());
+
+    angularVelocity = GetAngularVelocity(prevPoseStamped, poseStamped);
+
+    ROS_INFO_THROTTLE(1, "Current Touch Angular Velocity: x: %.3f, y: %.3f, z: %.3f, w: %.3f", angularVelocity.getX(), angularVelocity.getY(), angularVelocity.getZ(), angularVelocity.getW());
+
+    geometry_msgs::Vector3 current = omniState->current;
+
+    // ROS_INFO_THROTTLE(1, "Touch State:\n\tPose: %s\n\tCurrent: %s\n\tVelocity: %s",
+    //     PoseToString(omniState->pose, TOUCH_POSITION_UNIT_SCALE_FACTOR).c_str(),
+    //     Vector3ToString(omniState->current).c_str(),
+    //     Vector3ToString(omniState->velocity).c_str()
+    // );
 }
 
 int main(int argc, char **argv)
@@ -241,11 +284,23 @@ int main(int argc, char **argv)
 
     ros::NodeHandle nodeHandle;
 
-    ros::Subscriber poseSubscriber = nodeHandle.subscribe<geometry_msgs::PoseStamped>(
-        "android_pose",
+    // ros::Subscriber poseSubscriber = nodeHandle.subscribe<geometry_msgs::PoseStamped>(
+    //     "android_pose",
+    //     1,
+    //     boost::bind(
+    //         &poseCallback,
+    //         _1,
+    //         boost::ref(currentPoseStamped),
+    //         boost::ref(prevPoseStamped),
+    //         boost::ref(currentAngularVelocity)
+    //     )
+    // );
+
+    ros::Subscriber touchStateSubscriber = nodeHandle.subscribe<omni_msgs::OmniState>(
+        "/phantom/state",
         1,
         boost::bind(
-            &poseCallback,
+            &touchStateCallback,
             _1,
             boost::ref(currentPoseStamped),
             boost::ref(prevPoseStamped),
@@ -280,22 +335,30 @@ int main(int argc, char **argv)
 
     marker.action = visualization_msgs::Marker::MODIFY;
 
+    ros::Rate rate(100);
+
     ROS_INFO("Starting subscriber");
 
     while (ros::ok())
     {
-        tf2::Quaternion markerOrientation;
-        tf2::fromMsg(marker.pose.orientation, markerOrientation);
-        ROS_INFO_THROTTLE(1, "Prev marker orientation: %s", QuaternionToString(marker.pose.orientation).c_str());
-        geometry_msgs::Quaternion newOrientation = tf2::toMsg((markerOrientation * currentAngularVelocity).normalize());
-        ROS_INFO_THROTTLE(1, "New marker orientation: %s", QuaternionToString(newOrientation).c_str());
-        marker.pose.orientation = newOrientation;
-        vis_pub.publish(marker);
-        currentAngularVelocity.setX(0);
-        currentAngularVelocity.setY(0);
-        currentAngularVelocity.setZ(0);
-        currentAngularVelocity.setW(1);
+        if (IsValidQuaternion(currentAngularVelocity))
+        {
+            tf2::Quaternion markerOrientation;
+            tf2::fromMsg(marker.pose.orientation, markerOrientation);
+            ROS_INFO_THROTTLE(1, "Prev marker orientation: %s", QuaternionToString(marker.pose.orientation).c_str());
+            geometry_msgs::Quaternion newOrientation = tf2::toMsg((currentAngularVelocity * 1e-5 * markerOrientation).normalize());
+            ROS_INFO_THROTTLE(1, "New marker orientation: %s", QuaternionToString(newOrientation).c_str());
+            marker.pose.orientation = newOrientation;
+            vis_pub.publish(marker);
+
+            currentAngularVelocity.setX(0);
+            currentAngularVelocity.setY(0);
+            currentAngularVelocity.setZ(0);
+            currentAngularVelocity.setW(1);
+        }
+
         ros::spinOnce();
+        rate.sleep();
     }
 
     return 0;
