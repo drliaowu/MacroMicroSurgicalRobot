@@ -18,6 +18,7 @@ find_package(catkin REQUIRED COMPONENTS
   kdl_parser
   kdl_conversions
   controller_manager_msgs
+  rosbag
 )
 
 ## System dependencies are found with CMake's conventions
@@ -112,7 +113,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES touch_sub
-   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf2 tf2_ros kdl_parser kdl_conversions controller_manager_msgs visualization_msgs
+   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf2 tf2_ros kdl_parser kdl_conversions controller_manager_msgs visualization_msgs rosbag
 #  DEPENDS system_lib
 )
 
@@ -216,6 +217,9 @@ target_link_libraries(touch_subscriber ${catkin_LIBRARIES})
 
 add_executable(ur5e_control src/ur5e_control.cpp)
 target_link_libraries(ur5e_control ${catkin_LIBRARIES})
+
+add_executable(micro_module_control src/micro_module_control.cpp)
+target_link_libraries(micro_module_control ${catkin_LIBRARIES})
 
 add_executable(android_pose_subscriber src/android_pose_subscriber.cpp)
 target_link_libraries(android_pose_subscriber ${catkin_LIBRARIES})
