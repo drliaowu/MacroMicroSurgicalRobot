@@ -44,6 +44,16 @@ int ManipulatorModule::GetNumJoints()
     return this->numJoints;
 }
 
+int ManipulatorModule::GetNumPanJoints()
+{
+    return this->numPanJoints;
+}
+
+int ManipulatorModule::GetNumTiltJoints()
+{
+    return this->numTiltJoints;
+}
+
 bool ManipulatorModule::IsFirstJointPan()
 {
     return this->isFirstJointPan;

@@ -9,6 +9,8 @@ public:
     void SetTotalPanAngle(double angle);
     void SetTotalTiltAngle(double angle);
     int GetNumJoints();
+    int GetNumPanJoints();
+    int GetNumTiltJoints();
     bool IsFirstJointPan();
     Eigen::Matrix4d GetPanJointTransform();
     Eigen::Matrix4d GetTiltJointTransform();
