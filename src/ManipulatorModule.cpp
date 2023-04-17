@@ -90,12 +90,11 @@ Eigen::Matrix4d ManipulatorModule::GetPanJointTransform()
     double cosJointAngle = cos(this->panJointAngle);
     double sinJointAngle = sin(this->panJointAngle);
 
-    Eigen::Matrix4d transform(
-        1, 0, 0, 0,
-        0, cosJointAngle, -sinJointAngle, -this->panCentralSeparation * sin(halfJointAngle) - this->jointSeparationDistance * sinJointAngle,
-        0, sinJointAngle, cosJointAngle, this->panCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
-        0, 0, 0, 1
-    );
+    Eigen::Matrix4d transform;
+    transform << 1, 0, 0, 0,
+                 0, cosJointAngle, -sinJointAngle, -this->panCentralSeparation * sin(halfJointAngle) - this->jointSeparationDistance * sinJointAngle,
+                 0, sinJointAngle, cosJointAngle, this->panCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
+                 0, 0, 0, 1;
 
     return transform;
 }
@@ -107,12 +106,11 @@ Eigen::Matrix4d ManipulatorModule::GetTiltJointTransform()
     double cosJointAngle = cos(this->tiltJointAngle);
     double sinJointAngle = sin(this->tiltJointAngle);
 
-    Eigen::Matrix4d transform(
-        cosJointAngle, 0, sinJointAngle, this->panCentralSeparation * sin(halfJointAngle) + this->jointSeparationDistance * sinJointAngle,
-        0, 1, 0, 0,
-        -sinJointAngle, 0, cosJointAngle, this->panCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
-        0, 0, 0, 1
-    );
+    Eigen::Matrix4d transform;
+    transform << cosJointAngle, 0, sinJointAngle, this->panCentralSeparation * sin(halfJointAngle) + this->jointSeparationDistance * sinJointAngle,
+                 0, 1, 0, 0,
+                 -sinJointAngle, 0, cosJointAngle, this->panCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
+                 0, 0, 0, 1;
 
     return transform;
 }

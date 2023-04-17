@@ -78,12 +78,12 @@ const double LEAST_SQUARES_DAMPING_FACTOR = 1;
 
 Eigen::Matrix4d zRotationTransform(double theta)
 {
-    Eigen::Matrix4d transform(
-        cos(theta), -sin(theta), 0, 0,
-        sin(theta), cos(theta), 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1
-    );
+    Eigen::Matrix4d transform;
+
+    transform << cos(theta), -sin(theta), 0.0, 0.0,
+                 sin(theta), cos(theta), 0.0, 0.0,
+                 0.0, 0.0, 1.0, 0.0,
+                 0.0, 0.0, 0.0, 1.0;
 
     return transform;
 }
@@ -100,8 +100,11 @@ Eigen::MatrixXd GetJacobian(Eigen::Matrix4d baseTransform, std::vector<Manipulat
 
     Eigen::Matrix4d endTransform = baseTransform;
 
-    const Eigen::Vector3d xAxis(1, 0, 0);
-    const Eigen::Vector3d yAxis(0, 1, 0);
+    Eigen::Vector3d xAxis;
+    xAxis << 1, 0, 0;
+
+    Eigen::Vector3d yAxis;
+    yAxis << 0, 1, 0;
 
     Eigen::Matrix4d panJointTransform;
     Eigen::Matrix4d tiltJointTransform;
@@ -158,15 +161,12 @@ Eigen::MatrixXd GetJacobian(Eigen::Matrix4d baseTransform, std::vector<Manipulat
             {
                 jointCrossProduct = xAxis.cross(endPosition - jointPositionsByModule[i][j]);
 
-                jointJacobianColumn =
-                {
-                    jointCrossProduct(0),
-                    jointCrossProduct(1),
-                    jointCrossProduct(2),
-                    xAxis(0),
-                    xAxis(1),
-                    xAxis(2)
-                };
+                jointJacobianColumn << jointCrossProduct(0),
+                                       jointCrossProduct(1),
+                                       jointCrossProduct(2),
+                                       xAxis(0),
+                                       xAxis(1),
+                                       xAxis(2);
 
                 modulePanJacobianColumn += jointJacobianColumn;
             }
@@ -174,15 +174,12 @@ Eigen::MatrixXd GetJacobian(Eigen::Matrix4d baseTransform, std::vector<Manipulat
             {
                 jointCrossProduct = yAxis.cross(endPosition - jointPositionsByModule[i][j]);
 
-                jointJacobianColumn =
-                {
-                    jointCrossProduct(0),
-                    jointCrossProduct(1),
-                    jointCrossProduct(2),
-                    yAxis(0),
-                    yAxis(1),
-                    yAxis(2)
-                };
+                jointJacobianColumn << jointCrossProduct(0),
+                                       jointCrossProduct(1),
+                                       jointCrossProduct(2),
+                                       yAxis(0),
+                                       yAxis(1),
+                                       yAxis(2);
 
                 moduleTiltJacobianColumn += jointJacobianColumn;
             }
@@ -216,11 +213,11 @@ Eigen::MatrixXd GetInverseJacobian(Eigen::MatrixXd jacobian, double leastSquares
 
     Eigen::VectorXd singularValues = svd.singularValues();
 
-    Eigen::MatrixXd inverseJacobian(jacobian.cols(), jacobian.cols());
+    Eigen::MatrixXd inverseJacobian(jacobian.cols(), jacobian.rows());
 
     for (int i = 0; i < singularValues.size(); i++)
     {
-        inverseJacobian.col(i) = singularValues(i) / (pow(singularValues(i), 2) + pow(leastSquaresDampingFactor, 2)) * V.col(i) * U.col(i).transpose();
+        inverseJacobian += singularValues(i) / (pow(singularValues(i), 2) + pow(leastSquaresDampingFactor, 2)) * V.col(i) * U.col(i).transpose();
     }
 
     return inverseJacobian;
@@ -250,6 +247,8 @@ MotorGroupState GetMotorPositionsFromJointPositions(ManipulatorModule proximal, 
 
     state.DistalPanAngle = (distal.GetIsolatedPanLengthDelta(true) + distalLengthDeltaDueToProximalJoints) * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
     state.DistalTiltAngle = (distal.GetIsolatedTiltLengthDelta(true) + distalLengthDeltaDueToProximalJoints) * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
+
+    return state;
 }
 
 int main(int argc, char **argv)
@@ -259,28 +258,46 @@ int main(int argc, char **argv)
 
     std::vector<ManipulatorModule> modules { proximal, distal };
 
-    proximal.SetTotalPanAngle(M_PI_2 / 12);
-    proximal.SetTotalTiltAngle(M_PI_2 / 12);
+    proximal.SetTotalPanAngle(0);
+    proximal.SetTotalTiltAngle(0);
     distal.SetTotalPanAngle(0);
     distal.SetTotalTiltAngle(0);
 
-    Eigen::MatrixXd baseTransform;
+    Eigen::Matrix4d baseTransform;
+    baseTransform << 0, 0, 0, 1,
+                     0, 0, 0, 1,
+                     0, 0, 0, 1,
+                     0, 0, 0, 1;
 
     Eigen::MatrixXd jacobian = GetJacobian(baseTransform, modules);
 
+    std::stringstream output;
+
+    output << jacobian;
+
+    ROS_INFO("Jacobian: %s", output.str().c_str());
+
+    output.str("");
+
     Eigen::MatrixXd inverseJacobian = GetInverseJacobian(jacobian, LEAST_SQUARES_DAMPING_FACTOR);
+
+    output << inverseJacobian;
+
+    ROS_INFO("Inverse Jacobian: %s", output.str().c_str());
+
+    output.str("");
 
     MotorGroupState motorStates { 90, 90, 90, 90 };
 
-    Eigen::VectorXd desiredPose { 0, 0.002, 0.002, 0, 0, 0 };
+    Eigen::VectorXd desiredPose(6);
 
-    Eigen::MatrixXd jointAngles = inverseJacobian * desiredPose;
+    desiredPose << 0.005, 0.005, 0.005, 0.5, 0.5, 0.5;
 
-    std::stringstream output;
+    Eigen::MatrixXd jointDeltas = inverseJacobian * desiredPose;
 
-    output << jointAngles;
+    output << jointDeltas;
 
-    ROS_INFO(output.str().c_str());
+    ROS_INFO("Final Joint Deltas: %s", output.str().c_str());
 
     return 0;
 }

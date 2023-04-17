@@ -54,6 +54,8 @@ find_package(catkin REQUIRED COMPONENTS
 ##   * uncomment the generate_messages entry below
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
+add_library(manipulator_module src/ManipulatorModule.cpp)
+
 ## Generate messages in the 'msg' folder
 # add_message_files(
 #   FILES
@@ -124,7 +126,7 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+  include
   ${catkin_INCLUDE_DIRS}
 )
 
@@ -212,14 +214,11 @@ catkin_install_python(PROGRAMS src/android_pose_publisher.py
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
-add_executable(touch_subscriber src/touch_subscriber.cpp)
-target_link_libraries(touch_subscriber ${catkin_LIBRARIES})
-
 add_executable(ur5e_control src/ur5e_control.cpp)
 target_link_libraries(ur5e_control ${catkin_LIBRARIES})
 
 add_executable(micro_module_control src/micro_module_control.cpp)
-target_link_libraries(micro_module_control ${catkin_LIBRARIES})
+target_link_libraries(micro_module_control ${catkin_LIBRARIES} manipulator_module)
 
 add_executable(android_pose_subscriber src/android_pose_subscriber.cpp)
 target_link_libraries(android_pose_subscriber ${catkin_LIBRARIES})

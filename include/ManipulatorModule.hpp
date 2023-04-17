@@ -1,6 +1,6 @@
 #ifndef MANIPULATOR_MODULE
+#define MANIPULATOR_MODULE
 #include <Eigen/Dense>
-#endif
 
 class ManipulatorModule
 {
@@ -38,3 +38,4 @@ private:
 
     double GetCentralSeparation(double jointAngle);
 };
+#endif

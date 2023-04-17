@@ -1,6 +1,6 @@
-#ifndef Pose
+#ifndef POSE
+#define POSE
 #include <tf2/LinearMath/Quaternion.h>
-#endif
 
 class Pose
 {
@@ -11,3 +11,4 @@ public:
     Pose();
     Pose(tf2::Vector3 position, tf2::Quaternion orientation);
 };
+#endif

@@ -187,6 +187,16 @@ std::string Vector3ToString(geometry_msgs::Vector3 vector3)
     return output.str();
 }
 
+geometry_msgs::Point Vector3ToPoint(tf2::Vector3 vector)
+{
+    geometry_msgs::Point point;
+    point.x = vector.getX();
+    point.y = vector.getY();
+    point.z = vector.getZ();
+
+    return point;
+}
+
 void touchStateCallback(
     const omni_msgs::OmniState::ConstPtr& omniState,
     Pose& currentPose
@@ -315,16 +325,6 @@ void UpdateMovementGoal(
 
         goal.trajectory.points.push_back(targetPoint);
     }
-}
-
-geometry_msgs::Point Vector3ToPoint(tf2::Vector3 vector)
-{
-    geometry_msgs::Point point;
-    point.x = vector.getX();
-    point.y = vector.getY();
-    point.z = vector.getZ();
-
-    return point;
 }
 
 bool areSimilar(tf2::Quaternion a, tf2::Quaternion b)
