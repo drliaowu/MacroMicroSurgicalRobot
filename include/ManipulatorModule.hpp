@@ -12,6 +12,12 @@ public:
     int GetNumPanJoints();
     int GetNumTiltJoints();
     bool IsFirstJointPan();
+    double GetPanJointAngle();
+    double GetTiltJointAngle();
+    double GetHalfCurvatureAngle();
+    double GetCurvatureRadius();
+    double GetIsolatedPanLengthDelta(bool isLeftTendon);
+    double GetIsolatedTiltLengthDelta(bool isLeftTendon);
     Eigen::Matrix4d GetPanJointTransform();
     Eigen::Matrix4d GetTiltJointTransform();
 private:

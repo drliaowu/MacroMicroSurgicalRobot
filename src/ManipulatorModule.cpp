@@ -3,7 +3,11 @@
 ManipulatorModule::ManipulatorModule(bool isFirstJointPan, double diameter, double halfCurvatureAngle, int numJoints, double jointSeparationDistance)
 {
     this->isFirstJointPan = isFirstJointPan;
+    this->diameter = diameter;
     this->halfCurvatureAngle = halfCurvatureAngle;
+
+    this->curvatureRadius = this->diameter / (2 * sin(this->halfCurvatureAngle));
+
     this->numJoints = numJoints;
     this->jointSeparationDistance = jointSeparationDistance;
 
@@ -59,6 +63,26 @@ bool ManipulatorModule::IsFirstJointPan()
     return this->isFirstJointPan;
 }
 
+double ManipulatorModule::GetPanJointAngle()
+{
+    return this->panJointAngle;
+}
+
+double ManipulatorModule::GetTiltJointAngle()
+{
+    return this->tiltJointAngle;
+}
+
+double ManipulatorModule::GetHalfCurvatureAngle()
+{
+    return this->halfCurvatureAngle;
+}
+
+double ManipulatorModule::GetCurvatureRadius()
+{
+    return this->curvatureRadius;
+}
+
 Eigen::Matrix4d ManipulatorModule::GetPanJointTransform()
 {
     double halfJointAngle = this->panJointAngle / 2;
@@ -91,4 +115,20 @@ Eigen::Matrix4d ManipulatorModule::GetTiltJointTransform()
     );
 
     return transform;
+}
+
+double ManipulatorModule::GetIsolatedPanLengthDelta(bool isLeftTendon)
+{
+    return 2 * this->curvatureRadius * (
+        this->numPanJoints * (cos(this->halfCurvatureAngle) - cos(this->halfCurvatureAngle + (-1 * (int)isLeftTendon) * this->panJointAngle / 2)) +
+        this->numTiltJoints * (1 - cos(this->tiltJointAngle / 2))
+    );
+}
+
+double ManipulatorModule::GetIsolatedTiltLengthDelta(bool isLeftTendon)
+{
+    return 2 * this->curvatureRadius * (
+        this->numTiltJoints * (cos(this->halfCurvatureAngle) - cos(this->halfCurvatureAngle + (-1 * (int)isLeftTendon) * this->tiltJointAngle / 2)) +
+        this->numPanJoints * (1 - cos(this->panJointAngle / 2))
+    );
 }

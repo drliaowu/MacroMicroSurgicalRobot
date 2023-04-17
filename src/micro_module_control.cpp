@@ -43,17 +43,17 @@ const double MANIPULATOR_DIAMETER = 0.004;
 // Radius of the actuator pulley wheels, in metres
 const double PULLEY_WHEEL_RADIUS = 0.0225;
 
+// Conversion factor between a tendon length delta in metres and a pulley wheel rotation in degrees
+const double LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES = 180 / M_PI / PULLEY_WHEEL_RADIUS;
+
 // Centre-to-centre distance between tendon pairs in the cross-section of a sub-module, in metres
 const double TENDON_PAIR_SEPARATION = 0.003;
 
 // Half angle of curvature of a proximal sub-module, in radians
 const double PROXIMAL_HALF_CURVATURE_ANGLE = 0.2;
 
-// Number of pan joints in the proximal module
-const int PROXIMAL_NUM_PAN_JOINTS = 2;
-
-// Number of tilt joints in the proximal module
-const int PROXIMAL_NUM_TILT_JOINTS = 1;
+// Number of joints in the proximal module
+const int PROXIMAL_NUM_JOINTS = 3;
 
 // Separation between rolling surfaces in a proximal sub-module, in radians
 const double PROXIMAL_JOINT_SEPARATION = 0.001;
@@ -61,29 +61,17 @@ const double PROXIMAL_JOINT_SEPARATION = 0.001;
 // Length of a proximal sub-module, in metres
 const double PROXIMAL_LENGTH = 0.0014;
 
-// The radius of curvature ('r' in the original model) of a rolling surface in the proximal module, in metres
-const double PROXIMAL_CURVATURE_RADIUS = MANIPULATOR_DIAMETER / (2 * sin(PROXIMAL_HALF_CURVATURE_ANGLE));
-
 // Half angle of curvature of a proximal sub-module, in radians
 const double DISTAL_HALF_CURVATURE_ANGLE = 0.88;
 
-// Number of pan joints in the distal module
-const int DISTAL_NUM_PAN_JOINTS = 2;
-
-// Number of tilt joints in the distal module
-const int DISTAL_NUM_TILT_JOINTS = 1;
+// Number of joints in the distal module
+const int DISTAL_NUM_JOINTS = 3;
 
 // Separation between rolling surfaces in a distal sub-module, in radians
 const double DISTAL_JOINT_SEPARATION = 0.001;
 
 // Length of a distal sub-module, in metres
 const double DISTAL_LENGTH = 0.00288;
-
-// The radius of curvature ('r' in the original model) of a rolling surface in the distal module, in metres
-const double DISTAL_CURVATURE_RADIUS = MANIPULATOR_DIAMETER / (2 * sin(DISTAL_HALF_CURVATURE_ANGLE));
-
-// Whether the first joint in the manipulator is a pan joint
-const bool IS_FIRST_JOINT_PAN = true;
 
 // The damping factor, lambda, used in the damped least squares method of Jacobian matrix inversion
 const double LEAST_SQUARES_DAMPING_FACTOR = 1;
@@ -218,8 +206,8 @@ Eigen::MatrixXd GetJacobian(Eigen::Matrix4d baseTransform, std::vector<Manipulat
     return jacobian;
 }
 
-// Retrieve an approximation of the inverse Jacobian using the damped least squares method
-Eigen::VectorXd GetInverseJacobian(Eigen::MatrixXd jacobian, double leastSquaresDampingFactor)
+// Obtain an approximation of the inverse Jacobian using the damped least squares method
+Eigen::MatrixXd GetInverseJacobian(Eigen::MatrixXd jacobian, double leastSquaresDampingFactor)
 {
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(jacobian, Eigen::ComputeFullU | Eigen::ComputeFullV);
 
@@ -236,4 +224,63 @@ Eigen::VectorXd GetInverseJacobian(Eigen::MatrixXd jacobian, double leastSquares
     }
 
     return inverseJacobian;
+}
+
+MotorGroupState GetMotorPositionsFromJointPositions(ManipulatorModule proximal, ManipulatorModule distal)
+{
+    MotorGroupState state;
+
+    double proximalPanLengthDelta = proximal.GetIsolatedPanLengthDelta(true);
+    double proximalTiltLengthDelta = proximal.GetIsolatedTiltLengthDelta(true);
+
+    state.ProximalPanAngle = proximalPanLengthDelta * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
+    state.ProximalTiltAngle = proximalTiltLengthDelta * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
+
+    double proximalCurvatureRadius = proximal.GetCurvatureRadius();
+    double proximalHalfCurvatureAngle = proximal.GetHalfCurvatureAngle();
+
+    // The difference in tendon length change resulting from the angular offset of the distal tendons on the proximal joints
+    double distalTendonProximalJointOffset = (2 - sqrt(2)) * proximal.GetCurvatureRadius() * sin(proximal.GetHalfCurvatureAngle()) * (
+        proximal.GetNumPanJoints() * sin(proximal.GetPanJointAngle() / 2) +
+        proximal.GetNumTiltJoints() * sin(proximal.GetTiltJointAngle() / 2)
+    );
+
+    // The contribution of the proximal joint positions to the length delta of the distal tendons
+    double distalLengthDeltaDueToProximalJoints = proximalPanLengthDelta + proximalTiltLengthDelta + distalTendonProximalJointOffset;
+
+    state.DistalPanAngle = (distal.GetIsolatedPanLengthDelta(true) + distalLengthDeltaDueToProximalJoints) * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
+    state.DistalTiltAngle = (distal.GetIsolatedTiltLengthDelta(true) + distalLengthDeltaDueToProximalJoints) * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
+}
+
+int main(int argc, char **argv)
+{
+    ManipulatorModule proximal(true, MANIPULATOR_DIAMETER, PROXIMAL_HALF_CURVATURE_ANGLE, PROXIMAL_NUM_JOINTS, PROXIMAL_JOINT_SEPARATION);
+    ManipulatorModule distal(true, MANIPULATOR_DIAMETER, DISTAL_HALF_CURVATURE_ANGLE, DISTAL_NUM_JOINTS, DISTAL_JOINT_SEPARATION);
+
+    std::vector<ManipulatorModule> modules { proximal, distal };
+
+    proximal.SetTotalPanAngle(M_PI_2 / 12);
+    proximal.SetTotalTiltAngle(M_PI_2 / 12);
+    distal.SetTotalPanAngle(0);
+    distal.SetTotalTiltAngle(0);
+
+    Eigen::MatrixXd baseTransform;
+
+    Eigen::MatrixXd jacobian = GetJacobian(baseTransform, modules);
+
+    Eigen::MatrixXd inverseJacobian = GetInverseJacobian(jacobian, LEAST_SQUARES_DAMPING_FACTOR);
+
+    MotorGroupState motorStates { 90, 90, 90, 90 };
+
+    Eigen::VectorXd desiredPose { 0, 0.002, 0.002, 0, 0, 0 };
+
+    Eigen::MatrixXd jointAngles = inverseJacobian * desiredPose;
+
+    std::stringstream output;
+
+    output << jointAngles;
+
+    ROS_INFO(output.str().c_str());
+
+    return 0;
 }
