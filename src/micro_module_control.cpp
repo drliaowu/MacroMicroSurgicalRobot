@@ -76,6 +76,15 @@ const double DISTAL_LENGTH = 0.00288;
 // The damping factor, lambda, used in the damped least squares method of Jacobian matrix inversion
 const double LEAST_SQUARES_DAMPING_FACTOR = 1;
 
+void PrintMatrix(const Eigen::MatrixXd matrix, const char* title)
+{
+    std::stringstream output;
+
+    output << matrix;
+
+    ROS_INFO("%s:\n%s", title, output.str().c_str());
+}
+
 Eigen::Matrix4d zRotationTransform(double theta)
 {
     Eigen::Matrix4d transform;
@@ -88,9 +97,12 @@ Eigen::Matrix4d zRotationTransform(double theta)
     return transform;
 }
 
+// Extract the position vector from a homogeneous transform
 Eigen::Vector3d GetTransformPosition(Eigen::Matrix4d transform)
 {
+    PrintMatrix(transform, "HMG transform:");
     Eigen::Vector3d position { transform(0, 3), transform(1, 3), transform(2, 3) };
+    PrintMatrix(position, "Transform Position");
     return position;
 }
 
@@ -115,6 +127,9 @@ Eigen::MatrixXd GetJacobian(Eigen::Matrix4d baseTransform, std::vector<Manipulat
     {
         panJointTransform = module.GetPanJointTransform();
         tiltJointTransform = module.GetTiltJointTransform();
+
+        PrintMatrix(panJointTransform, "Pan Joint Transform");
+        PrintMatrix(tiltJointTransform, "Tilt Joint Transform");
 
         std::vector<Eigen::Vector3d> moduleJointPositions;
 
@@ -142,6 +157,8 @@ Eigen::MatrixXd GetJacobian(Eigen::Matrix4d baseTransform, std::vector<Manipulat
     }
 
     Eigen::Vector3d endPosition = GetTransformPosition(endTransform);
+
+    PrintMatrix(endPosition, "End Position");
 
     // The final Jacobian will have 6 rows and 2 * {num. modules} columns
     Eigen::MatrixXd jacobian(6, 2 * modules.size());
@@ -264,28 +281,18 @@ int main(int argc, char **argv)
     distal.SetTotalTiltAngle(0);
 
     Eigen::Matrix4d baseTransform;
-    baseTransform << 0, 0, 0, 1,
-                     0, 0, 0, 1,
-                     0, 0, 0, 1,
+    baseTransform << 1, 0, 0, 0,
+                     0, 1, 0, 0,
+                     0, 0, 1, 0,
                      0, 0, 0, 1;
 
     Eigen::MatrixXd jacobian = GetJacobian(baseTransform, modules);
 
-    std::stringstream output;
-
-    output << jacobian;
-
-    ROS_INFO("Jacobian: %s", output.str().c_str());
-
-    output.str("");
+    PrintMatrix(jacobian, "Jacobian");
 
     Eigen::MatrixXd inverseJacobian = GetInverseJacobian(jacobian, LEAST_SQUARES_DAMPING_FACTOR);
 
-    output << inverseJacobian;
-
-    ROS_INFO("Inverse Jacobian: %s", output.str().c_str());
-
-    output.str("");
+    PrintMatrix(inverseJacobian, "Inverse Jacobian");
 
     MotorGroupState motorStates { 90, 90, 90, 90 };
 
@@ -293,11 +300,11 @@ int main(int argc, char **argv)
 
     desiredPose << 0.005, 0.005, 0.005, 0.5, 0.5, 0.5;
 
-    Eigen::MatrixXd jointDeltas = inverseJacobian * desiredPose;
+    Eigen::Vector4d jointDeltas = inverseJacobian * desiredPose;
 
-    output << jointDeltas;
+    PrintMatrix(jointDeltas, "Final joint deltas");
 
-    ROS_INFO("Final Joint Deltas: %s", output.str().c_str());
+    MotorGroupState newState = GetMotorPositionsFromJointPositions(proximal, distal);
 
     return 0;
 }
