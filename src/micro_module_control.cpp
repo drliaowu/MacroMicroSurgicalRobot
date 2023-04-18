@@ -100,9 +100,8 @@ Eigen::Matrix4d zRotationTransform(double theta)
 // Extract the position vector from a homogeneous transform
 Eigen::Vector3d GetTransformPosition(Eigen::Matrix4d transform)
 {
-    PrintMatrix(transform, "HMG transform:");
-    Eigen::Vector3d position { transform(0, 3), transform(1, 3), transform(2, 3) };
-    PrintMatrix(position, "Transform Position");
+    Eigen::Vector3d position;
+    position << transform(0, 3), transform(1, 3), transform(2, 3);
     return position;
 }
 
@@ -161,15 +160,18 @@ Eigen::MatrixXd GetJacobian(Eigen::Matrix4d baseTransform, std::vector<Manipulat
     PrintMatrix(endPosition, "End Position");
 
     // The final Jacobian will have 6 rows and 2 * {num. modules} columns
-    Eigen::MatrixXd jacobian(6, 2 * modules.size());
+    Eigen::MatrixXd jacobian = Eigen::MatrixXd::Zero(6, 2 * modules.size());
 
     Eigen::VectorXd jointJacobianColumn(6);
     Eigen::Vector3d jointCrossProduct;
 
+    Eigen::VectorXd modulePanJacobianColumn;
+    Eigen::VectorXd moduleTiltJacobianColumn;
+
     for (int i = 0; i < modules.size(); i++)
     {
-        Eigen::VectorXd modulePanJacobianColumn(6);
-        Eigen::VectorXd moduleTiltJacobianColumn(6);
+        modulePanJacobianColumn = Eigen::VectorXd::Zero(6);
+        moduleTiltJacobianColumn = Eigen::VectorXd::Zero(6);
 
         for (int j = 0; j < modules[i].GetNumJoints(); j++)
         {
@@ -230,9 +232,9 @@ Eigen::MatrixXd GetInverseJacobian(Eigen::MatrixXd jacobian, double leastSquares
 
     Eigen::VectorXd singularValues = svd.singularValues();
 
-    Eigen::MatrixXd inverseJacobian(jacobian.cols(), jacobian.rows());
+    Eigen::MatrixXd inverseJacobian = Eigen::MatrixXd::Zero(jacobian.cols(), jacobian.rows());
 
-    for (int i = 0; i < singularValues.size(); i++)
+    for (int i = 0; i < svd.nonzeroSingularValues(); i++)
     {
         inverseJacobian += singularValues(i) / (pow(singularValues(i), 2) + pow(leastSquaresDampingFactor, 2)) * V.col(i) * U.col(i).transpose();
     }
