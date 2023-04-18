@@ -55,6 +55,8 @@ find_package(catkin REQUIRED COMPONENTS
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 add_library(manipulator_module src/ManipulatorModule.cpp)
+add_library(pose src/Pose.cpp)
+add_library(motor_group_state src/MotorGroupState.cpp)
 
 ## Generate messages in the 'msg' folder
 # add_message_files(
@@ -215,10 +217,10 @@ catkin_install_python(PROGRAMS src/android_pose_publisher.py
 # catkin_add_nosetests(test)
 
 add_executable(ur5e_control src/ur5e_control.cpp)
-target_link_libraries(ur5e_control ${catkin_LIBRARIES})
+target_link_libraries(ur5e_control ${catkin_LIBRARIES} pose)
 
 add_executable(micro_module_control src/micro_module_control.cpp)
-target_link_libraries(micro_module_control ${catkin_LIBRARIES} manipulator_module)
+target_link_libraries(micro_module_control ${catkin_LIBRARIES} manipulator_module motor_group_state)
 
 add_executable(android_pose_subscriber src/android_pose_subscriber.cpp)
 target_link_libraries(android_pose_subscriber ${catkin_LIBRARIES})

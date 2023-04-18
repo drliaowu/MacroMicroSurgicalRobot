@@ -31,6 +31,7 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <rosbag/bag.h>
+#include "../include/Pose.hpp"
 
 // Touch position coordinates are output in millimetres, must convert to metres
 const double TOUCH_POSITION_UNIT_SCALE_FACTOR = 1e-3;
@@ -61,31 +62,6 @@ const std::string UR5E_CONTROLLER_NAME = "pose_based_cartesian_traj_controller";
 const std::string UR5E_ACTION_CLIENT_NAME = "pose_based_cartesian_traj_controller/follow_cartesian_trajectory";
 
 typedef actionlib::SimpleActionClient<cartesian_control_msgs::FollowCartesianTrajectoryAction> CartesianActionClient;
-
-class Pose
-{
-public:
-    tf2::Vector3 position;
-    tf2::Quaternion orientation;
-
-    Pose()
-    {
-        this->position.setX(0.0);
-        this->position.setY(0.0);
-        this->position.setZ(0.0);
-
-        this->orientation.setX(0.0);
-        this->orientation.setY(0.0);
-        this->orientation.setZ(0.0);
-        this->orientation.setW(0.0);
-    }
-
-    Pose(tf2::Vector3 position, tf2::Quaternion orientation)
-    {
-        this->position = position;
-        this->orientation = orientation;
-    }
-};
 
 bool IsZero(double value)
 {

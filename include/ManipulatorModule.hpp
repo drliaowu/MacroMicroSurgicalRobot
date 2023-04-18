@@ -8,6 +8,8 @@ public:
     ManipulatorModule(bool isFirstJointPan, double diameter, double halfCurvatureAngle, int numJoints, double jointSeparationDistance);
     void SetTotalPanAngle(double angle);
     void SetTotalTiltAngle(double angle);
+    void ApplyPanAngleDelta(double delta);
+    void ApplyTiltAngleDelta(double delta);
     int GetNumJoints();
     int GetNumPanJoints();
     int GetNumTiltJoints();
@@ -16,6 +18,9 @@ public:
     double GetTiltJointAngle();
     double GetHalfCurvatureAngle();
     double GetCurvatureRadius();
+    double GetPanCentralSeparation();
+    double GetTiltCentralSeparation();
+    double GetJointSeparationDistance();
     double GetIsolatedPanLengthDelta(bool isLeftTendon);
     double GetIsolatedTiltLengthDelta(bool isLeftTendon);
     Eigen::Matrix4d GetPanJointTransform();
