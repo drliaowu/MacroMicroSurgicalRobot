@@ -29,22 +29,6 @@ double ManipulatorModule::CalculateCentralSeparation(double jointAngle)
     return 2 * this->curvatureRadius * (1 - cos(this->halfCurvatureAngle) * cos(jointAngle / 2));
 }
 
-Eigen::Matrix4d ManipulatorModule::CalculateJointTransform(double jointAngle, double jointCentralSeparation)
-{
-    double halfJointAngle = jointAngle / 2;
-
-    double cosJointAngle = cos(jointAngle);
-    double sinJointAngle = sin(jointAngle);
-
-    Eigen::Matrix4d transform;
-    transform << cosJointAngle, 0, sinJointAngle, jointCentralSeparation * sin(halfJointAngle) + this->jointSeparationDistance * sinJointAngle,
-                 0, 1, 0, 0,
-                 -sinJointAngle, 0, cosJointAngle, jointCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
-                 0, 0, 0, 1;
-
-    return transform;
-}
-
 double ManipulatorModule::CalculateIsolatedLengthDelta(bool isLeftTendon, int numPrimaryJoints, int numSecondaryJoints, double primaryJointAngle, double secondaryJointAngle)
 {
     return 2 * this->curvatureRadius * (
@@ -53,13 +37,45 @@ double ManipulatorModule::CalculateIsolatedLengthDelta(bool isLeftTendon, int nu
     );
 }
 
+Eigen::Matrix4d ManipulatorModule::CalculatePanJointTransform()
+{
+    double halfJointAngle = this->panJointAngle / 2;
+    double cosJointAngle = cos(this->panJointAngle);
+    double sinJointAngle = sin(this->panJointAngle);
+
+    Eigen::Matrix4d transform;
+    transform << 1, 0, 0, 0,
+                 0, cosJointAngle, -sinJointAngle, -this->panCentralSeparation * sin(halfJointAngle) - this->jointSeparationDistance * sinJointAngle,
+                 0, sinJointAngle, cosJointAngle, this->panCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
+                 0, 0, 0, 1;
+
+    return transform;
+}
+
+Eigen::Matrix4d ManipulatorModule::CalculateTiltJointTransform()
+{
+    double halfJointAngle = this->tiltJointAngle / 2;
+    double cosJointAngle = cos(this->tiltJointAngle);
+    double sinJointAngle = sin(this->tiltJointAngle);
+
+    Eigen::Matrix4d transform;
+    transform << cosJointAngle, 0, sinJointAngle, this->tiltCentralSeparation * sin(halfJointAngle) + this->jointSeparationDistance * sinJointAngle,
+                 0, 1, 0, 0,
+                 -sinJointAngle, 0, cosJointAngle, this->tiltCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
+                 0, 0, 0, 1;
+
+    return transform;
+}
+
 void ManipulatorModule::SetTotalPanAngle(double angle)
 {
     this->totalPanAngle = angle;
     this->panJointAngle = this->totalPanAngle / this->numPanJoints;
 
     this->panCentralSeparation = this->CalculateCentralSeparation(this->panJointAngle);
-    this->panJointTransform = this->CalculateJointTransform(this->panJointAngle, this->panCentralSeparation);
+
+    this->panJointTransform = this->CalculatePanJointTransform();
+
     this->isolatedPanLengthDelta = this->CalculateIsolatedLengthDelta(true, this->numPanJoints, this->numTiltJoints, this->panJointAngle, this->tiltJointAngle);
 }
 
@@ -69,7 +85,9 @@ void ManipulatorModule::SetTotalTiltAngle(double angle)
     this->tiltJointAngle = this->totalTiltAngle / this->numTiltJoints;
 
     this->tiltCentralSeparation = this->CalculateCentralSeparation(this->tiltJointAngle);
-    this->tiltJointTransform = this->CalculateJointTransform(this->tiltJointAngle, this->tiltCentralSeparation);
+
+    this->tiltJointTransform = this->CalculateTiltJointTransform();
+
     this->isolatedTiltLengthDelta = this->CalculateIsolatedLengthDelta(true, this->numTiltJoints, this->numPanJoints, this->tiltJointAngle, this->panJointAngle);
 }
 

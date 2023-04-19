@@ -1,7 +1,6 @@
 #include <string>
 #include <sstream>
 #include <vector>
-#include <array>
 #include <math.h>
 #include "ros/ros.h"
 #include "std_msgs/Header.h"
@@ -11,28 +10,13 @@
 #include "geometry_msgs/Vector3.h"
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TransformStamped.h>
-#include <controller_manager_msgs/LoadController.h>
-#include <controller_manager_msgs/SwitchController.h>
 #include "omni_msgs/OmniState.h"
 #include "omni_msgs/OmniButtonEvent.h"
-#include "sensor_msgs/JointState.h"
-#include "actionlib/client/simple_action_client.h"
-#include "cartesian_control_msgs/FollowCartesianTrajectoryAction.h"
-#include "cartesian_control_msgs/FollowCartesianTrajectoryGoal.h"
-#include "cartesian_control_msgs/CartesianTrajectoryPoint.h"
-#include "boost/bind.hpp"
-#include "boost/thread.hpp"
 #include <memory>
-#include <kdl_parser/kdl_parser.hpp>
-#include <kdl/chain.hpp>
-#include <kdl/chainfksolverpos_recursive.hpp>
-#include <kdl/frames_io.hpp>
 #include <tf2_ros/transform_listener.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <rosbag/bag.h>
-#include "../include/Pose.hpp"
-#include "../include/MotorGroupState.hpp"
 #include "../include/ManipulatorModule.hpp"
 #include <Eigen/Dense>
 #include <Eigen/SVD>
@@ -83,6 +67,40 @@ void PrintMatrix(const Eigen::MatrixXd matrix, const char* title)
     output << matrix;
 
     ROS_INFO("%s:\n%s", title, output.str().c_str());
+}
+
+Eigen::Matrix3d xRotationMatrix(double theta)
+{
+    Eigen::Matrix3d rotation;
+
+    rotation << 1, 0, 0,
+                0, cos(theta), -sin(theta),
+                0, sin(theta), cos(theta);
+
+    return rotation;
+}
+
+Eigen::Matrix3d yRotationMatrix(double theta)
+{
+    Eigen::Matrix3d rotation;
+
+    rotation << cos(theta), 0, sin(theta),
+                0, 1, 0,
+                -sin(theta), 0, cos(theta);
+
+    return rotation;
+}
+
+Eigen::Matrix4d zRotationTransform(double theta)
+{
+    Eigen::Matrix4d transform;
+
+    transform << cos(theta), -sin(theta), 0.0, 0.0,
+                 sin(theta), cos(theta), 0.0, 0.0,
+                 0.0, 0.0, 1.0, 0.0,
+                 0.0, 0.0, 0.0, 1.0;
+
+    return transform;
 }
 
 Eigen::Matrix4d zRotationTransform(double theta)
@@ -431,7 +449,7 @@ int main(int argc, char **argv)
     motorStates << 90, 90, 90, 90;
 
     Eigen::Vector3d desiredPos;
-    desiredPos << 8.0, 8.0, 0.0128534;
+    desiredPos << 0.005, 0.005, 0.0128534;
 
     PrintMatrix(desiredPos, "Desired Pos");
 

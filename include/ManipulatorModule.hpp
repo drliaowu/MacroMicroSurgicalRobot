@@ -46,7 +46,8 @@ private:
     double isolatedTiltLengthDelta;
 
     double CalculateCentralSeparation(double jointAngle);
-    Eigen::Matrix4d CalculateJointTransform(double jointAngle, double jointCentralSeparation);
+    Eigen::Matrix4d CalculatePanJointTransform();
+    Eigen::Matrix4d CalculateTiltJointTransform();
     double CalculateIsolatedLengthDelta(bool isLeftTendon, int numPrimaryJoints, int numSecondaryJoints, double primaryJointAngle, double secondaryJointAngle);
 };
 #endif
