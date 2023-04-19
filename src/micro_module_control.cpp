@@ -41,7 +41,7 @@
 const double MANIPULATOR_DIAMETER = 0.004;
 
 // Radius of the actuator pulley wheels, in metres
-const double PULLEY_WHEEL_RADIUS = 0.0225;
+const double PULLEY_WHEEL_RADIUS = 0.01125;
 
 // Conversion factor between a tendon length delta in metres and a pulley wheel rotation in degrees
 const double LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES = 180 / M_PI / PULLEY_WHEEL_RADIUS;
@@ -183,10 +183,13 @@ Eigen::MatrixXd GetJacobian(std::vector<Eigen::Vector3d> jointPositions, std::ve
 
         for (int j = 0; j < modules[i].GetNumJoints(); j++)
         {
+            PrintMatrix(jointPositions[i+j], "Joint Position");
             // Current joint is a pan-type if the first joint in the module is pan and the joint index is even, or if the inverse is true
-            if (modules[i].IsFirstJointPan() ^ (i % 2 != 0))
+            if (modules[i].IsFirstJointPan() ^ (j % 2 != 0))
             {
                 jointCrossProduct = xAxis.cross(endPosition - jointPositions[i + j]);
+
+                PrintMatrix(jointCrossProduct, "Joint cross product");
 
                 jointJacobianColumn << jointCrossProduct(0),
                                        jointCrossProduct(1),
@@ -201,6 +204,8 @@ Eigen::MatrixXd GetJacobian(std::vector<Eigen::Vector3d> jointPositions, std::ve
             {
                 jointCrossProduct = yAxis.cross(endPosition - jointPositions[i + j]);
 
+                PrintMatrix(jointCrossProduct, "Joint cross product");
+
                 jointJacobianColumn << jointCrossProduct(0),
                                        jointCrossProduct(1),
                                        jointCrossProduct(2),
@@ -212,8 +217,12 @@ Eigen::MatrixXd GetJacobian(std::vector<Eigen::Vector3d> jointPositions, std::ve
             }
         }
 
+        PrintMatrix(modulePanJacobianColumn, "Pan Jacobian column pre-division");
+
         modulePanJacobianColumn /= modules[i].GetNumPanJoints();
         moduleTiltJacobianColumn /= modules[i].GetNumTiltJoints();
+
+        PrintMatrix(modulePanJacobianColumn, "Pan Jacobian column post-division");
 
         if (modules[i].IsFirstJointPan())
         {
@@ -250,22 +259,24 @@ Eigen::MatrixXd GetInverseJacobian(Eigen::MatrixXd jacobian, double leastSquares
     return inverseJacobian;
 }
 
-MotorGroupState GetMotorPositionsFromJointPositions(ManipulatorModule proximal, ManipulatorModule distal)
+Eigen::Vector4d GetMotorPositionsFromJointPositions(ManipulatorModule proximal, ManipulatorModule distal)
 {
-    MotorGroupState state;
+    Eigen::Vector4d motorPositions = Eigen::Vector4d::Zero();
 
     double test = 2 * proximal.GetCurvatureRadius() * (
         proximal.GetNumPanJoints() * (cos(proximal.GetHalfCurvatureAngle()) - cos(proximal.GetHalfCurvatureAngle() + (-1 * (int)true) * proximal.GetPanJointAngle() / 2)) +
         proximal.GetNumTiltJoints() * (1 - cos(proximal.GetTiltJointAngle() / 2))
     );
 
-    double proximalPanLengthDelta = proximal.GetIsolatedPanLengthDelta(true);
-    double proximalTiltLengthDelta = proximal.GetIsolatedTiltLengthDelta(true);
+    ROS_INFO("test: %.6f", test);
 
-    ROS_INFO("prox. pan: %.3f, prox. tilt: %.3f", proximalPanLengthDelta, proximalTiltLengthDelta);
+    double proximalPanLengthDelta = proximal.GetIsolatedPanLengthDelta();
+    double proximalTiltLengthDelta = proximal.GetIsolatedTiltLengthDelta();
 
-    state.ProximalPanAngle = proximalPanLengthDelta * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
-    state.ProximalTiltAngle = proximalTiltLengthDelta * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
+    ROS_INFO("prox. pan: %.6f, prox. tilt: %.6f", proximalPanLengthDelta, proximalTiltLengthDelta);
+
+    motorPositions(0) = proximalPanLengthDelta * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
+    motorPositions(1) = proximalTiltLengthDelta * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
 
     double proximalCurvatureRadius = proximal.GetCurvatureRadius();
     double proximalHalfCurvatureAngle = proximal.GetHalfCurvatureAngle();
@@ -279,14 +290,60 @@ MotorGroupState GetMotorPositionsFromJointPositions(ManipulatorModule proximal, 
     // The contribution of the proximal joint positions to the length delta of the distal tendons
     double distalLengthDeltaDueToProximalJoints = proximalPanLengthDelta + proximalTiltLengthDelta + distalTendonProximalJointOffset;
 
-    ROS_INFO("dLengthDelta: %.3f", distalLengthDeltaDueToProximalJoints);
+    ROS_INFO("dLengthDelta: %.6f", distalLengthDeltaDueToProximalJoints);
 
-    state.DistalPanAngle = (distal.GetIsolatedPanLengthDelta(true) + distalLengthDeltaDueToProximalJoints) * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
-    state.DistalTiltAngle = (distal.GetIsolatedTiltLengthDelta(true) + distalLengthDeltaDueToProximalJoints) * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
+    motorPositions(2) = (distal.GetIsolatedPanLengthDelta() + distalLengthDeltaDueToProximalJoints) * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
+    motorPositions(3) = (distal.GetIsolatedTiltLengthDelta() + distalLengthDeltaDueToProximalJoints) * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
 
-    ROS_INFO("prox. pan: %d, prox. tilt: %d", state.DistalPanAngle, state.DistalTiltAngle);
+    ROS_INFO("dist. pan: %.6f, dist. tilt: %.6f", motorPositions(0), motorPositions(1));
 
-    return state;
+    return motorPositions;
+}
+
+Eigen::Vector4d GetJointPositionsFromMotorPositions(Eigen::Vector4d motorStates, ManipulatorModule proximal, ManipulatorModule distal)
+{
+    Eigen::Vector4d jointPositions = Eigen::Vector4d::Zero();
+
+    // Ratio of proximal curvature radius to pulley radius
+    double proximalRadiusRatio = proximal.GetCurvatureRadius() / PULLEY_WHEEL_RADIUS;
+    double proximalHalfPanJointAngle = proximal.GetPanJointAngle() / 2;
+    double proximalHalfTiltJointAngle = proximal.GetTiltJointAngle() / 2;
+
+    // Construct proximal actuator Jacobian
+    Eigen::Matrix2d proximalJacobian;
+    proximalJacobian << -proximalRadiusRatio * sin(proximal.GetHalfCurvatureAngle() - proximalHalfPanJointAngle), proximalRadiusRatio * sin(proximalHalfTiltJointAngle),
+                         proximalRadiusRatio * sin(proximalHalfPanJointAngle), -proximalRadiusRatio * sin(proximal.GetHalfCurvatureAngle() - proximalHalfTiltJointAngle);
+
+    PrintMatrix(proximalJacobian, "Proximal Actuator Jacobian");
+
+    double distalRadiusRatio = distal.GetCurvatureRadius() / PULLEY_WHEEL_RADIUS;
+    double distalHalfPanJointAngle = distal.GetPanJointAngle() / 2;
+    double distalHalfTiltJointAngle = distal.GetTiltJointAngle() / 2;
+
+    // Constant coefficient of partial derivatives of distal tendon lengths w.r.t. proximal joint angles
+    double derivativeCoefficient = 1 - 1 / sqrt(2);
+
+    // Construct distal actuator Jacobian
+    Eigen::MatrixXd distalJacobian(2, 4);
+    distalJacobian <<  proximalRadiusRatio * derivativeCoefficient * sin(proximal.GetHalfCurvatureAngle()) * cos(proximalHalfPanJointAngle),
+                       proximalRadiusRatio * derivativeCoefficient * sin(proximal.GetHalfCurvatureAngle()) * cos(proximalHalfTiltJointAngle),
+                       -distalRadiusRatio * sin(distal.GetHalfCurvatureAngle() - distalHalfPanJointAngle),
+                       distalRadiusRatio * sin(distalHalfTiltJointAngle),
+                       proximalRadiusRatio * derivativeCoefficient * sin(proximal.GetHalfCurvatureAngle()) * cos(proximalHalfPanJointAngle),
+                       proximalRadiusRatio * derivativeCoefficient * sin(proximal.GetHalfCurvatureAngle()) * cos(proximalHalfTiltJointAngle),
+                       distalRadiusRatio * sin(distalHalfPanJointAngle),
+                       -distalRadiusRatio * sin(distal.GetHalfCurvatureAngle() - distalHalfTiltJointAngle);
+
+    PrintMatrix(distalJacobian, "Distal Actuator Jacobian");
+
+    // Combine proximal and distal Jacobians. Note that the distal motor angles have no effect on the proximal joint positions
+    Eigen::Matrix4d combinedJacobian = Eigen::Matrix4d::Zero();
+    combinedJacobian.block(0, 0, 2, 2) = proximalJacobian;
+    combinedJacobian.block(2, 0, 2, 4) = distalJacobian;
+
+    jointPositions = combinedJacobian * motorStates.inverse();
+
+    return jointPositions;
 }
 
 Eigen::Vector3d SkewSymmetricMatrixToVector(Eigen::Matrix3d matrix)
@@ -320,12 +377,12 @@ int main(int argc, char **argv)
 
     std::vector<ManipulatorModule> modules { proximal, distal };
 
-    proximal.SetTotalPanAngle(0);
-    proximal.SetTotalTiltAngle(0);
-    distal.SetTotalPanAngle(0);
-    distal.SetTotalTiltAngle(0);
+    proximal.SetTotalPanAngle(0.0);
+    proximal.SetTotalTiltAngle(0.0);
+    distal.SetTotalPanAngle(0.0);
+    distal.SetTotalTiltAngle(0.0);
 
-    ROS_INFO("Test Proximal: %.3f, %d, %.3f, %.3f, %d, %.3f, %.3f, %.3f, %.3f",
+    ROS_INFO("Proximal parameters:\n\tcurvature radius: %.6f\n\tnum pan joints: %d\n\thalf curvature angle: %.6f\n\tpan joint angle: %.6f\n\tnum tilt joints: %d\n\ttilt joint angle: %.6f\n\tpan central separation: %.6f\n\ttilt central separation: %.6f\n\tjoint separation distance: %.6f\n\tisolated pan length delta: %.6f\n\tisolated tilt length delta: %.6f",
         proximal.GetCurvatureRadius(),
         proximal.GetNumPanJoints(),
         proximal.GetHalfCurvatureAngle(),
@@ -334,9 +391,12 @@ int main(int argc, char **argv)
         proximal.GetTiltJointAngle(),
         proximal.GetPanCentralSeparation(),
         proximal.GetTiltCentralSeparation(),
-        proximal.GetJointSeparationDistance()
+        proximal.GetJointSeparationDistance(),
+        proximal.GetIsolatedPanLengthDelta(),
+        proximal.GetIsolatedTiltLengthDelta()
     );
-    ROS_INFO("Test Distal: %.3f, %d, %.3f, %.3f, %d, %.3f, %.3f, %.3f, %.3f",
+
+    ROS_INFO("Proximal parameters:\n\tcurvature radius: %.6f\n\tnum pan joints: %d\n\thalf curvature angle: %.6f\n\tpan joint angle: %.6f\n\tnum tilt joints: %d\n\ttilt joint angle: %.6f\n\tpan central separation: %.6f\n\ttilt central separation: %.6f\n\tjoint separation distance: %.6f\n\tisolated pan length delta: %.6f\n\tisolated tilt length delta: %.6f",
         distal.GetCurvatureRadius(),
         distal.GetNumPanJoints(),
         distal.GetHalfCurvatureAngle(),
@@ -345,47 +405,42 @@ int main(int argc, char **argv)
         distal.GetTiltJointAngle(),
         distal.GetPanCentralSeparation(),
         distal.GetTiltCentralSeparation(),
-        distal.GetJointSeparationDistance()
+        distal.GetJointSeparationDistance(),
+        proximal.GetIsolatedPanLengthDelta(),
+        proximal.GetIsolatedTiltLengthDelta()
     );
-
-    ROS_INFO("%.3f", distal.GetPanCentralSeparation() * cos(distal.GetPanJointAngle() / 2) + distal.GetJointSeparationDistance() * cos(distal.GetPanJointAngle()));
 
     Eigen::Matrix4d panJointTransform = Eigen::Matrix4d::Zero();
 
-    panJointTransform = modules[0].GetPanJointTransform().eval();
-    panJointTransform = modules[1].GetPanJointTransform().eval();
-
-    PrintMatrix(panJointTransform, "Initial pan transform: ");
-
-    Eigen::Matrix4d baseTransform;
-    baseTransform << 1, 0, 0, 0,
-                     0, 1, 0, 0,
-                     0, 0, 1, 0,
-                     0, 0, 0, 1;
+    Eigen::Matrix4d baseTransform = Eigen::Matrix4d::Identity();
 
     std::vector<Eigen::Vector3d> jointPositions = GetJointPositions(baseTransform, modules);
 
     Eigen::Vector3d endPosition = jointPositions.back();
 
     Eigen::MatrixXd jacobian = GetJacobian(jointPositions, modules);
+    Eigen::MatrixXd truncatedJacobian = jacobian.block(0, 0, 3, jacobian.cols());
 
     PrintMatrix(jacobian, "Jacobian");
 
-    Eigen::MatrixXd inverseJacobian = GetInverseJacobian(jacobian, LEAST_SQUARES_DAMPING_FACTOR);
+    Eigen::MatrixXd inverseJacobian = GetInverseJacobian(truncatedJacobian, LEAST_SQUARES_DAMPING_FACTOR);
 
     PrintMatrix(inverseJacobian, "Inverse Jacobian");
 
-    MotorGroupState motorStates { 90, 90, 90, 90 };
+    Eigen::Vector4d motorStates;
+    motorStates << 90, 90, 90, 90;
 
     Eigen::Vector3d desiredPos;
-    desiredPos << 0.05, 0.05, 0.05;
+    desiredPos << 8.0, 8.0, 0.0128534;
 
-    Eigen::VectorXd desiredPose(6);
-    desiredPose << (desiredPos - endPosition), SkewSymmetricMatrixToVector(Eigen::Matrix3d::Identity() * Eigen::Matrix3d::Identity().transpose() - Eigen::Matrix3d::Identity());
+    PrintMatrix(desiredPos, "Desired Pos");
 
-    PrintMatrix(desiredPose, "Desired Pose");
+    // Eigen::MatrixXd truncatedInverseJacobian(inverseJacobian.rows(), 3);
+    // truncatedInverseJacobian << inverseJacobian.block(0, 0, inverseJacobian.rows(), 3);
 
-    Eigen::Vector4d jointDeltas = inverseJacobian * desiredPose;
+    // PrintMatrix(truncatedInverseJacobian, "Truncated inverse Jacobian");
+
+    Eigen::Vector4d jointDeltas = inverseJacobian * (desiredPos - endPosition);
 
     PrintMatrix(jointDeltas, "Final joint deltas");
 
@@ -395,11 +450,11 @@ int main(int argc, char **argv)
     distal.ApplyPanAngleDelta(jointDeltas(2));
     distal.ApplyTiltAngleDelta(jointDeltas(3));
 
-    MotorGroupState stateDelta = GetMotorPositionsFromJointPositions(proximal, distal);
+    Eigen::Vector4d stateDelta = GetMotorPositionsFromJointPositions(proximal, distal);
 
     motorStates += stateDelta;
 
-    ROS_INFO("%d %d %d %d", motorStates.ProximalPanAngle, motorStates.ProximalTiltAngle, motorStates.DistalPanAngle, motorStates.DistalTiltAngle);
+    ROS_INFO("%.6f %.6f %.6f %.6f", motorStates(0), motorStates(1), motorStates(2), motorStates(3));
 
     return 0;
 }

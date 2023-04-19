@@ -21,8 +21,8 @@ public:
     double GetPanCentralSeparation();
     double GetTiltCentralSeparation();
     double GetJointSeparationDistance();
-    double GetIsolatedPanLengthDelta(bool isLeftTendon);
-    double GetIsolatedTiltLengthDelta(bool isLeftTendon);
+    double GetIsolatedPanLengthDelta();
+    double GetIsolatedTiltLengthDelta();
     Eigen::Matrix4d GetPanJointTransform();
     Eigen::Matrix4d GetTiltJointTransform();
 private:
@@ -40,7 +40,13 @@ private:
     double tiltJointAngle;
     double panCentralSeparation;
     double tiltCentralSeparation;
+    Eigen::Matrix4d panJointTransform;
+    Eigen::Matrix4d tiltJointTransform;
+    double isolatedPanLengthDelta;
+    double isolatedTiltLengthDelta;
 
-    double GetCentralSeparation(double jointAngle);
+    double CalculateCentralSeparation(double jointAngle);
+    Eigen::Matrix4d CalculateJointTransform(double jointAngle, double jointCentralSeparation);
+    double CalculateIsolatedLengthDelta(bool isLeftTendon, int numPrimaryJoints, int numSecondaryJoints, double primaryJointAngle, double secondaryJointAngle);
 };
 #endif
