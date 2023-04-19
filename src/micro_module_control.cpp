@@ -20,6 +20,7 @@
 #include "../include/ManipulatorModule.hpp"
 #include <Eigen/Dense>
 #include <Eigen/SVD>
+#include <Eigen/StdVector>
 
 // Diameter of the manipulator, in metres
 const double MANIPULATOR_DIAMETER = 0.004;
@@ -59,6 +60,8 @@ const double DISTAL_LENGTH = 0.00288;
 
 // The damping factor, lambda, used in the damped least squares method of Jacobian matrix inversion
 const double LEAST_SQUARES_DAMPING_FACTOR = 1;
+
+typedef std::vector<Eigen::Matrix4d,Eigen::aligned_allocator<Eigen::Matrix4d> > TransformVector;
 
 void PrintMatrix(const Eigen::MatrixXd matrix, const char* title)
 {
@@ -103,27 +106,24 @@ Eigen::Matrix4d zRotationTransform(double theta)
     return transform;
 }
 
-Eigen::Matrix4d zRotationTransform(double theta)
-{
-    Eigen::Matrix4d transform;
-
-    transform << cos(theta), -sin(theta), 0.0, 0.0,
-                 sin(theta), cos(theta), 0.0, 0.0,
-                 0.0, 0.0, 1.0, 0.0,
-                 0.0, 0.0, 0.0, 1.0;
-
-    return transform;
-}
-
 // Extract the position vector from a homogeneous transform
 Eigen::Vector3d GetTransformPosition(Eigen::Matrix4d transform)
 {
     Eigen::Vector3d position;
-    position << transform(0, 3), transform(1, 3), transform(2, 3);
+    position << transform.block(0, 3, 3, 1);
+
     return position;
 }
 
-std::vector<Eigen::Vector3d> GetJointPositions(Eigen::Matrix4d baseTransform, std::vector<ManipulatorModule> modules)
+Eigen::Matrix3d GetTransformRotation(Eigen::Matrix4d transform)
+{
+    Eigen::Matrix3d rotation;
+    rotation = transform.block(0, 0, 3, 3);
+
+    return rotation;
+}
+
+TransformVector GetJointTransforms(Eigen::Matrix4d baseTransform, std::vector<ManipulatorModule> modules)
 {
     Eigen::Matrix4d moduleInterfaceAngularOffset = zRotationTransform(-M_PI_4);
 
@@ -132,12 +132,12 @@ std::vector<Eigen::Vector3d> GetJointPositions(Eigen::Matrix4d baseTransform, st
     Eigen::Matrix4d panJointTransform = Eigen::Matrix4d::Zero();
     Eigen::Matrix4d tiltJointTransform = Eigen::Matrix4d::Zero();
 
-    std::vector<Eigen::Vector3d> jointPositions;
+    TransformVector jointTransforms;
 
     for (int i = 0; i < modules.size(); i++)
     {
-        panJointTransform = modules[i].GetPanJointTransform().eval();
-        tiltJointTransform = modules[i].GetTiltJointTransform().eval();
+        panJointTransform = modules[i].GetPanJointTransform();
+        tiltJointTransform = modules[i].GetTiltJointTransform();
 
         PrintMatrix(panJointTransform, "Pan Joint Transform");
         PrintMatrix(tiltJointTransform, "Tilt Joint Transform");
@@ -154,28 +154,29 @@ std::vector<Eigen::Vector3d> GetJointPositions(Eigen::Matrix4d baseTransform, st
                 endTransform *= tiltJointTransform;
             }
 
-            Eigen::Vector3d jointPosition = GetTransformPosition(endTransform);
+            PrintMatrix(endTransform, "Pushing back matrix: ");
 
-            jointPositions.push_back(jointPosition);
+            Eigen::Matrix4d jointTransform = endTransform;
+
+            jointTransforms.push_back(jointTransform);
         }
 
         // Modules are offset by a 45-degree rotation at their interface
         if (i != modules.size() - 1)
         {
             endTransform *= moduleInterfaceAngularOffset;
+            PrintMatrix(endTransform, "Rotated end transform");
         }
     }
 
-    Eigen::Vector3d endPosition = GetTransformPosition(endTransform);
+    jointTransforms.push_back(endTransform);
 
-    jointPositions.push_back(endPosition);
+    PrintMatrix(endTransform, "End Transform");
 
-    PrintMatrix(endPosition, "End Position");
-
-    return jointPositions;
+    return jointTransforms;
 }
 
-Eigen::MatrixXd GetJacobian(std::vector<Eigen::Vector3d> jointPositions, std::vector<ManipulatorModule> modules)
+Eigen::MatrixXd GetJacobian(TransformVector jointTransforms, std::vector<ManipulatorModule> modules)
 {
     Eigen::Vector3d xAxis;
     xAxis << 1, 0, 0;
@@ -192,7 +193,10 @@ Eigen::MatrixXd GetJacobian(std::vector<Eigen::Vector3d> jointPositions, std::ve
     Eigen::VectorXd modulePanJacobianColumn;
     Eigen::VectorXd moduleTiltJacobianColumn;
 
-    Eigen::Vector3d endPosition = jointPositions.back();
+    Eigen::Vector3d endPosition = GetTransformPosition(jointTransforms.back());
+
+    // The number of joint transforms applied to the Jacobian
+    int numJointTransformsProcessed = 0;
 
     for (int i = 0; i < modules.size(); i++)
     {
@@ -201,46 +205,38 @@ Eigen::MatrixXd GetJacobian(std::vector<Eigen::Vector3d> jointPositions, std::ve
 
         for (int j = 0; j < modules[i].GetNumJoints(); j++)
         {
-            PrintMatrix(jointPositions[i+j], "Joint Position");
+            Eigen::Matrix4d jointTransform = jointTransforms[numJointTransformsProcessed + j];
+            PrintMatrix(jointTransform, "Joint Transform");
             // Current joint is a pan-type if the first joint in the module is pan and the joint index is even, or if the inverse is true
             if (modules[i].IsFirstJointPan() ^ (j % 2 != 0))
             {
-                jointCrossProduct = xAxis.cross(endPosition - jointPositions[i + j]);
+                Eigen::Vector3d actuationAxis = GetTransformRotation(jointTransform) * xAxis;
+                jointCrossProduct = actuationAxis.cross(endPosition - GetTransformPosition(jointTransform));
 
                 PrintMatrix(jointCrossProduct, "Joint cross product");
 
-                jointJacobianColumn << jointCrossProduct(0),
-                                       jointCrossProduct(1),
-                                       jointCrossProduct(2),
-                                       xAxis(0),
-                                       xAxis(1),
-                                       xAxis(2);
+                jointJacobianColumn << jointCrossProduct, actuationAxis;
 
                 modulePanJacobianColumn += jointJacobianColumn;
             }
             else
             {
-                jointCrossProduct = yAxis.cross(endPosition - jointPositions[i + j]);
+                Eigen::Vector3d actuationAxis = GetTransformRotation(jointTransform) * yAxis;
+                jointCrossProduct = actuationAxis.cross(endPosition - GetTransformPosition(jointTransform));
 
                 PrintMatrix(jointCrossProduct, "Joint cross product");
 
-                jointJacobianColumn << jointCrossProduct(0),
-                                       jointCrossProduct(1),
-                                       jointCrossProduct(2),
-                                       yAxis(0),
-                                       yAxis(1),
-                                       yAxis(2);
+                jointJacobianColumn << jointCrossProduct, actuationAxis;
 
                 moduleTiltJacobianColumn += jointJacobianColumn;
             }
         }
 
-        PrintMatrix(modulePanJacobianColumn, "Pan Jacobian column pre-division");
-
         modulePanJacobianColumn /= modules[i].GetNumPanJoints();
         moduleTiltJacobianColumn /= modules[i].GetNumTiltJoints();
 
         PrintMatrix(modulePanJacobianColumn, "Pan Jacobian column post-division");
+        PrintMatrix(moduleTiltJacobianColumn, "Tilt Jacobian column post-division");
 
         if (modules[i].IsFirstJointPan())
         {
@@ -252,6 +248,8 @@ Eigen::MatrixXd GetJacobian(std::vector<Eigen::Vector3d> jointPositions, std::ve
             jacobian.col(2 * i) = moduleTiltJacobianColumn;
             jacobian.col(2 * i + 1) = modulePanJacobianColumn;
         }
+
+        numJointTransformsProcessed += modules[i].GetNumJoints();
     }
 
     return jacobian;
@@ -414,7 +412,7 @@ int main(int argc, char **argv)
         proximal.GetIsolatedTiltLengthDelta()
     );
 
-    ROS_INFO("Proximal parameters:\n\tcurvature radius: %.6f\n\tnum pan joints: %d\n\thalf curvature angle: %.6f\n\tpan joint angle: %.6f\n\tnum tilt joints: %d\n\ttilt joint angle: %.6f\n\tpan central separation: %.6f\n\ttilt central separation: %.6f\n\tjoint separation distance: %.6f\n\tisolated pan length delta: %.6f\n\tisolated tilt length delta: %.6f",
+    ROS_INFO("Distal parameters:\n\tcurvature radius: %.6f\n\tnum pan joints: %d\n\thalf curvature angle: %.6f\n\tpan joint angle: %.6f\n\tnum tilt joints: %d\n\ttilt joint angle: %.6f\n\tpan central separation: %.6f\n\ttilt central separation: %.6f\n\tjoint separation distance: %.6f\n\tisolated pan length delta: %.6f\n\tisolated tilt length delta: %.6f",
         distal.GetCurvatureRadius(),
         distal.GetNumPanJoints(),
         distal.GetHalfCurvatureAngle(),
@@ -432,11 +430,18 @@ int main(int argc, char **argv)
 
     Eigen::Matrix4d baseTransform = Eigen::Matrix4d::Identity();
 
-    std::vector<Eigen::Vector3d> jointPositions = GetJointPositions(baseTransform, modules);
+    TransformVector jointTransforms = GetJointTransforms(baseTransform, modules);
 
-    Eigen::Vector3d endPosition = jointPositions.back();
+    for (int i = 0; i < jointTransforms.size(); i++)
+    {
+        std::stringstream stream;
+        stream << "Transform " << i + 1;
+        PrintMatrix(jointTransforms[i], stream.str().c_str());
+    }
 
-    Eigen::MatrixXd jacobian = GetJacobian(jointPositions, modules);
+    Eigen::Vector3d endPosition = GetTransformPosition(jointTransforms.back());
+
+    Eigen::MatrixXd jacobian = GetJacobian(jointTransforms, modules);
     Eigen::MatrixXd truncatedJacobian = jacobian.block(0, 0, 3, jacobian.cols());
 
     PrintMatrix(jacobian, "Jacobian");
