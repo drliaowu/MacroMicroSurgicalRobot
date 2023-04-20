@@ -442,7 +442,40 @@ int main(int argc, char **argv)
 
             ROS_INFO_THROTTLE(1, "Movement pose delta: %s", PoseToString(movementPoseDelta, 1).c_str());
 
+            for (int i = 1; i <= UR5E_CONTROL_NUM_SUBDIVISIONS; i++)
+            {
+                targetPoint.pose.position = Vector3ToPoint(currentUR5EPose.position + movementPoseDelta.position / UR5E_CONTROL_NUM_SUBDIVISIONS);
 
+                // tf2::Quaternion velocityIncrement, ur5eOrientation, currentTouchOrientation, touchOriginOrientation;
+                // tf2::fromMsg(currentUR5EPoseStamped.pose.orientation, ur5eOrientation);
+                // tf2::fromMsg(currentTouchPoseStamped.pose.orientation, currentTouchOrientation);
+                // tf2::fromMsg(TouchOriginPose.orientation, touchOriginOrientation);
+                // velocityIncrement = currentTouchOrientation * touchOriginOrientation.inverse();
+                // targetPoint.pose.orientation = tf2::toMsg((stylusToRobotRotation * velocityIncrement) * ur5eOrientation);
+                // targetPoint.pose.orientation = StylusRotationToRobotFrame(stylusToRobotRotation, currentTouchPoseStamped.pose.orientation);
+
+                // Only attempt to apply the orientation delta if it is real and non-zero
+                if (IsValidQuaternion(movementPoseDelta.orientation))
+                {
+                    targetPoint.pose.orientation = tf2::toMsg(
+                        currentUR5EPose.orientation.slerp(
+                            movementPoseDelta.orientation * currentUR5EPose.orientation,
+                            UR5E_ROTATION_SCALE_FACTOR * i / UR5E_CONTROL_NUM_SUBDIVISIONS
+                        )
+                    );
+                }
+                // If there is no valid orientation delta, the UR5e should remain at its current orientation
+                else
+                {
+                    targetPoint.pose.orientation = currentUR5EPoseStamped.pose.orientation;
+                }
+                // ROS_INFO_THROTTLE(1, "Sending UR5e to Pose: %s", PoseToString(targetPoint.pose, 1).c_str());
+                // ROS_INFO_THROTTLE(1, "Current UR5e Pose: %s", PoseToString(currentUR5EPose.pose, 1).c_str());
+
+                targetPoint.time_from_start = ros::Duration(i * UR5E_CONTROL_TIME_INCREMENT);
+
+                goal.trajectory.points.push_back(targetPoint);
+            }
 
             trajectoryClient.waitForServer();
             trajectoryClient.sendGoal(goal);
