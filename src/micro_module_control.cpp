@@ -354,6 +354,34 @@ Eigen::MatrixXd GetInverseJacobian(Eigen::MatrixXd& jacobian, double leastSquare
     return inverseJacobian;
 }
 
+// Obtain an approximation of the inverse Jacobian using the damped least squares method
+Eigen::MatrixXd GetInverseJacobianDamped(
+    Eigen::MatrixXd& jacobian,
+    const Eigen::Vector4d& jointPositions,
+    const Eigen::Vector4d& minJointAngles,
+    const Eigen::Vector4d& maxJointAngles,
+    double leastSquaresDampingFactor
+)
+{
+    Eigen::Matrix4d D = Eigen::Matrix4d::Identity();
+
+    double minAngle, maxAngle;
+
+    for (int i = 0; i < jointPositions.size(); i++)
+    {
+        minAngle = minJointAngles(i);
+        maxAngle = maxJointAngles(i);
+
+        D(i, i) = pow((2 * jointPositions(i) - maxAngle - minAngle) / (maxAngle - minAngle), 2) + 1;
+    }
+
+    Eigen::MatrixXd inverseJacobian(jacobian.cols(), jacobian.rows());
+
+    inverseJacobian = (jacobian.transpose() * jacobian + D.pow(2)).colPivHouseholderQr().solve(jacobian.transpose());
+
+    return inverseJacobian;
+}
+
 Eigen::Vector4d GetMotorPositionsFromJointPositions(const ManipulatorModule& proximal, const ManipulatorModule& distal)
 {
     Eigen::Vector4d motorPositions = Eigen::Vector4d::Zero();
@@ -651,7 +679,7 @@ int main(int argc, char **argv)
 
     // Fixed transformation quaternion between touch and manipulator frames
     tf2::Quaternion touchToManipulatorRotation;
-    touchToManipulatorRotation.setRPY(0, 0, 0);
+    touchToManipulatorRotation.setRPY(0, M_PI, 0);
 
     Eigen::Vector3d endPosition = Eigen::Vector3d::Zero();
 
@@ -663,7 +691,18 @@ int main(int argc, char **argv)
 
     Eigen::Matrix3d movementRotation;
 
-    ros::Duration duration(0.5, 0);
+    Eigen::Vector4d minJointAngles;
+
+    minJointAngles << -0.1, -0.1, -0.05, -0.05;
+
+    Eigen::Vector4d maxJointAngles;
+
+    maxJointAngles << 0.1, 0.1, -0.05, -0.05;
+
+    Eigen::Vector4d jointPositions;
+    jointPositions << proximal.GetPanJointAngle(), proximal.GetTiltJointAngle(), distal.GetPanJointAngle(), distal.GetTiltJointAngle();
+
+    ros::Rate rate(2);
 
     while (ros::ok())
     {
@@ -702,7 +741,9 @@ int main(int argc, char **argv)
 
             // PrintMatrix(jacobian, "Jacobian");
 
-            Eigen::MatrixXd inverseJacobian = GetInverseJacobian(jacobian, LEAST_SQUARES_DAMPING_FACTOR);
+            jointPositions << proximal.GetPanJointAngle(), proximal.GetTiltJointAngle(), distal.GetPanJointAngle(), distal.GetTiltJointAngle();
+
+            Eigen::MatrixXd inverseJacobian = GetInverseJacobianDamped(jacobian, jointPositions, minJointAngles, maxJointAngles, LEAST_SQUARES_DAMPING_FACTOR);
 
             // PrintMatrix(inverseJacobian, "Inverse Jacobian");
 
@@ -745,20 +786,7 @@ int main(int argc, char **argv)
 
             motorCommandsPublisher.publish(motorCommandsMsg);
 
-            // commandStream << std::setfill('0') << std::setw(3) << motor1Pos << std::setfill('0') << std::setw(3) << motor2Pos << std::setfill('0') << std::setw(3) << motor3Pos << std::setfill('0') << std::setw(3) << motor4Pos << '\n';
-
-            // serial.writeString(commandStream.str().c_str());
-
-            // while (!ReadMotorPositions(motorStateReadBuffer, motor1Pos, motor2Pos, motor3Pos, motor4Pos))
-            // {
-            //     memset(motorStateReadBuffer, 0, MAX_RETURN_BYTES * sizeof(char));
-            //     serial.readString(motorStateReadBuffer, '\n', MAX_RETURN_BYTES, 100);
-            // }
-
-            // memset(motorStateReadBuffer, 0, MAX_RETURN_BYTES * sizeof(char));
-            // commandStream.str("");
-
-            duration.sleep();
+            rate.sleep();
         }
 
         ros::spinOnce();
