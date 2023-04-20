@@ -20,8 +20,47 @@ ManipulatorModule::ManipulatorModule(bool isFirstJointPan, double diameter, doub
     }
 
     this->numTiltJoints = this->numJoints - this->numPanJoints;
-    this->SetTotalPanAngle(0.0);
-    this->SetTotalTiltAngle(0.0);
+
+    this->totalPanAngle = 0.0;
+    this->panJointAngle = this->totalPanAngle / this->numPanJoints;
+
+    this->panCentralSeparation = 2 * this->curvatureRadius * (1 - cos(this->halfCurvatureAngle) * cos(this->panJointAngle / 2));
+
+    double halfJointAngle = this->panJointAngle / 2;
+    double cosJointAngle = cos(this->panJointAngle);
+    double sinJointAngle = sin(this->panJointAngle);
+
+    this->panJointTransform = Eigen::Matrix4d::Zero();
+
+    this->panJointTransform << 1, 0, 0, 0,
+                 0, cosJointAngle, -sinJointAngle, -this->panCentralSeparation * sin(halfJointAngle) - this->jointSeparationDistance * sinJointAngle,
+                 0, sinJointAngle, cosJointAngle, this->panCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
+                 0, 0, 0, 1;
+
+    this->isolatedPanLengthDelta = 2 * this->curvatureRadius * (
+        this->numPanJoints * (cos(this->halfCurvatureAngle) - cos(this->halfCurvatureAngle -this->panJointAngle / 2)) +
+        this->numTiltJoints * (1 - cos(this->tiltJointAngle / 2))
+    );
+
+    this->totalTiltAngle = 0.0;
+    this->tiltJointAngle = this->totalTiltAngle / this->numTiltJoints;
+
+    this->tiltCentralSeparation = 2 * this->curvatureRadius * (1 - cos(this->halfCurvatureAngle) * cos(this->tiltJointAngle / 2));
+
+    halfJointAngle = this->tiltJointAngle / 2;
+    cosJointAngle = cos(this->tiltJointAngle);
+    sinJointAngle = sin(this->tiltJointAngle);
+
+    this->tiltJointTransform = Eigen::Matrix4d::Zero();
+    this->tiltJointTransform << cosJointAngle, 0, sinJointAngle, this->tiltCentralSeparation * sin(halfJointAngle) + this->jointSeparationDistance * sinJointAngle,
+                 0, 1, 0, 0,
+                 -sinJointAngle, 0, cosJointAngle, this->tiltCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
+                 0, 0, 0, 1;
+
+    this->isolatedTiltLengthDelta = 2 * this->curvatureRadius * (
+        this->numTiltJoints * (cos(this->halfCurvatureAngle) - cos(this->halfCurvatureAngle -this->tiltJointAngle / 2)) +
+        this->numPanJoints * (1 - cos(this->panJointAngle / 2))
+    );
 }
 
 double ManipulatorModule::CalculateCentralSeparation(double jointAngle)
@@ -74,7 +113,14 @@ void ManipulatorModule::SetTotalPanAngle(double angle)
 
     this->panCentralSeparation = this->CalculateCentralSeparation(this->panJointAngle);
 
-    this->panJointTransform = this->CalculatePanJointTransform();
+    double halfJointAngle = this->panJointAngle / 2;
+    double cosJointAngle = cos(this->panJointAngle);
+    double sinJointAngle = sin(this->panJointAngle);
+
+    this->panJointTransform << 1, 0, 0, 0,
+                 0, cosJointAngle, -sinJointAngle, -this->panCentralSeparation * sin(halfJointAngle) - this->jointSeparationDistance * sinJointAngle,
+                 0, sinJointAngle, cosJointAngle, this->panCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
+                 0, 0, 0, 1;
 
     this->isolatedPanLengthDelta = this->CalculateIsolatedLengthDelta(true, this->numPanJoints, this->numTiltJoints, this->panJointAngle, this->tiltJointAngle);
 }
@@ -86,7 +132,14 @@ void ManipulatorModule::SetTotalTiltAngle(double angle)
 
     this->tiltCentralSeparation = this->CalculateCentralSeparation(this->tiltJointAngle);
 
-    this->tiltJointTransform = this->CalculateTiltJointTransform();
+    double halfJointAngle = this->tiltJointAngle / 2;
+    double cosJointAngle = cos(this->tiltJointAngle);
+    double sinJointAngle = sin(this->tiltJointAngle);
+
+    this->tiltJointTransform << cosJointAngle, 0, sinJointAngle, this->tiltCentralSeparation * sin(halfJointAngle) + this->jointSeparationDistance * sinJointAngle,
+                 0, 1, 0, 0,
+                 -sinJointAngle, 0, cosJointAngle, this->tiltCentralSeparation * cos(halfJointAngle) + this->jointSeparationDistance * cosJointAngle,
+                 0, 0, 0, 1;
 
     this->isolatedTiltLengthDelta = this->CalculateIsolatedLengthDelta(true, this->numTiltJoints, this->numPanJoints, this->tiltJointAngle, this->panJointAngle);
 }
@@ -101,77 +154,77 @@ void ManipulatorModule::ApplyTiltAngleDelta(double delta)
     this->SetTotalTiltAngle(this->totalTiltAngle + delta);
 }
 
-int ManipulatorModule::GetNumJoints()
+const int& ManipulatorModule::GetNumJoints() const
 {
     return this->numJoints;
 }
 
-int ManipulatorModule::GetNumPanJoints()
+const int& ManipulatorModule::GetNumPanJoints() const
 {
     return this->numPanJoints;
 }
 
-int ManipulatorModule::GetNumTiltJoints()
+const int& ManipulatorModule::GetNumTiltJoints() const
 {
     return this->numTiltJoints;
 }
 
-bool ManipulatorModule::IsFirstJointPan()
+const bool& ManipulatorModule::IsFirstJointPan() const
 {
     return this->isFirstJointPan;
 }
 
-double ManipulatorModule::GetPanJointAngle()
+const double& ManipulatorModule::GetPanJointAngle() const
 {
     return this->panJointAngle;
 }
 
-double ManipulatorModule::GetTiltJointAngle()
+const double& ManipulatorModule::GetTiltJointAngle() const
 {
     return this->tiltJointAngle;
 }
 
-double ManipulatorModule::GetHalfCurvatureAngle()
+const double& ManipulatorModule::GetHalfCurvatureAngle() const
 {
     return this->halfCurvatureAngle;
 }
 
-double ManipulatorModule::GetCurvatureRadius()
+const double& ManipulatorModule::GetCurvatureRadius() const
 {
     return this->curvatureRadius;
 }
 
-double ManipulatorModule::GetPanCentralSeparation()
+const double& ManipulatorModule::GetPanCentralSeparation() const
 {
     return this->panCentralSeparation;
 }
 
-double ManipulatorModule::GetTiltCentralSeparation()
+const double& ManipulatorModule::GetTiltCentralSeparation() const
 {
     return this->tiltCentralSeparation;
 }
 
-double ManipulatorModule::GetJointSeparationDistance()
+const double& ManipulatorModule::GetJointSeparationDistance() const
 {
     return this->jointSeparationDistance;
 }
 
-Eigen::Matrix4d ManipulatorModule::GetPanJointTransform()
+const Eigen::Matrix4d& ManipulatorModule::GetPanJointTransform() const
 {
     return this->panJointTransform;
 }
 
-Eigen::Matrix4d ManipulatorModule::GetTiltJointTransform()
+const Eigen::Matrix4d& ManipulatorModule::GetTiltJointTransform() const
 {
     return this->tiltJointTransform;
 }
 
-double ManipulatorModule::GetIsolatedPanLengthDelta()
+const double& ManipulatorModule::GetIsolatedPanLengthDelta() const
 {
     return this->isolatedPanLengthDelta;
 }
 
-double ManipulatorModule::GetIsolatedTiltLengthDelta()
+const double& ManipulatorModule::GetIsolatedTiltLengthDelta() const
 {
     return this->isolatedTiltLengthDelta;
 }

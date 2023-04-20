@@ -5,26 +5,28 @@
 class ManipulatorModule
 {
 public:
+    // This macro must be added to all classes with Eigen matrix members to ensure proper memory alignment
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     ManipulatorModule(bool isFirstJointPan, double diameter, double halfCurvatureAngle, int numJoints, double jointSeparationDistance);
     void SetTotalPanAngle(double angle);
     void SetTotalTiltAngle(double angle);
     void ApplyPanAngleDelta(double delta);
     void ApplyTiltAngleDelta(double delta);
-    int GetNumJoints();
-    int GetNumPanJoints();
-    int GetNumTiltJoints();
-    bool IsFirstJointPan();
-    double GetPanJointAngle();
-    double GetTiltJointAngle();
-    double GetHalfCurvatureAngle();
-    double GetCurvatureRadius();
-    double GetPanCentralSeparation();
-    double GetTiltCentralSeparation();
-    double GetJointSeparationDistance();
-    double GetIsolatedPanLengthDelta();
-    double GetIsolatedTiltLengthDelta();
-    Eigen::Matrix4d GetPanJointTransform();
-    Eigen::Matrix4d GetTiltJointTransform();
+    const int& GetNumJoints() const;
+    const int& GetNumPanJoints() const;
+    const int& GetNumTiltJoints() const;
+    const bool& IsFirstJointPan() const;
+    const double& GetPanJointAngle() const;
+    const double& GetTiltJointAngle() const;
+    const double& GetHalfCurvatureAngle() const;
+    const double& GetCurvatureRadius() const;
+    const double& GetPanCentralSeparation() const;
+    const double& GetTiltCentralSeparation() const;
+    const double& GetJointSeparationDistance() const;
+    const double& GetIsolatedPanLengthDelta() const;
+    const double& GetIsolatedTiltLengthDelta() const;
+    const Eigen::Matrix4d& GetPanJointTransform() const;
+    const Eigen::Matrix4d& GetTiltJointTransform() const;
 private:
     bool isFirstJointPan;
     double diameter;
