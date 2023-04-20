@@ -19,16 +19,11 @@
 #include <rosbag/bag.h>
 #include "../include/ManipulatorModule.hpp"
 #include "../include/Pose.hpp"
-#include "../include/serialib.h"
 #include <Eigen/Dense>
 #include <Eigen/SVD>
 #include <Eigen/StdVector>
 #include <Eigen/Geometry>
-
-const char* SERIAL_PORT  = "/dev/ttyACM0";
-const int BAUD_RATE = 9600;
-const int MAX_RETURN_BYTES = 16;
-const int MOTOR_STATE_STRING_LENGTH = 13;
+#include "motor_angles_msg/MotorAngles.h"
 
 // Touch position coordinates are output in millimetres, must convert to metres
 const double TOUCH_POSITION_UNIT_SCALE_FACTOR = 1e-3;
@@ -101,24 +96,6 @@ std::string QuaternionToString(tf2::Quaternion quaternion)
         << ")";
 
     return output.str();
-}
-
-bool ReadMotorPositions(char* motorStateBuffer, int& motor1Pos, int&motor2Pos, int& motor3Pos, int& motor4Pos)
-{
-    // Read motor equilibrium angles from control board
-    if (strlen(motorStateBuffer) != MOTOR_STATE_STRING_LENGTH)
-    {
-        return false;
-    }
-
-    std::string motorState(motorStateBuffer);
-
-    motor1Pos = std::stoi(motorState.substr(0,3));
-    motor2Pos = std::stoi(motorState.substr(3,3));
-    motor3Pos = std::stoi(motorState.substr(6,3));
-    motor4Pos = std::stoi(motorState.substr(9,3));
-
-    return true;
 }
 
 void PrintMatrix(const Eigen::MatrixXd& matrix, const char* title)
@@ -227,8 +204,8 @@ TransformVector GetJointTransforms(const Eigen::Matrix4d& baseTransform, const E
         panJointTransform = modules[i].GetPanJointTransform();
         tiltJointTransform = modules[i].GetTiltJointTransform();
 
-        PrintMatrix(panJointTransform, "Pan Joint Transform");
-        PrintMatrix(tiltJointTransform, "Tilt Joint Transform");
+        // PrintMatrix(panJointTransform, "Pan Joint Transform");
+        // PrintMatrix(tiltJointTransform, "Tilt Joint Transform");
 
         for (int j = 0; j < modules[i].GetNumJoints(); j++)
         {
@@ -242,7 +219,7 @@ TransformVector GetJointTransforms(const Eigen::Matrix4d& baseTransform, const E
                 endTransform *= tiltJointTransform;
             }
 
-            PrintMatrix(endTransform, "Pushing back matrix: ");
+            // PrintMatrix(endTransform, "Pushing back matrix: ");
 
             Eigen::Matrix4d jointTransform = endTransform;
 
@@ -253,7 +230,7 @@ TransformVector GetJointTransforms(const Eigen::Matrix4d& baseTransform, const E
         if (i != modules.size() - 1)
         {
             endTransform *= moduleInterfaceAngularOffset;
-            PrintMatrix(endTransform, "Rotated end transform");
+            // PrintMatrix(endTransform, "Rotated end transform");
         }
     }
 
@@ -261,7 +238,7 @@ TransformVector GetJointTransforms(const Eigen::Matrix4d& baseTransform, const E
 
     jointTransforms.push_back(endTransform);
 
-    PrintMatrix(endTransform, "End Transform");
+    // PrintMatrix(endTransform, "End Transform");
 
     return jointTransforms;
 }
@@ -298,14 +275,14 @@ Eigen::MatrixXd GetJacobian(const TransformVector& jointTransforms, const Manipu
         for (int j = 0; j < modules[i].GetNumJoints(); j++)
         {
             Eigen::Matrix4d jointTransform = jointTransforms[numJointTransformsProcessed + j];
-            PrintMatrix(jointTransform, "Joint Transform");
+            // PrintMatrix(jointTransform, "Joint Transform");
             // Current joint is a pan-type if the first joint in the module is pan and the joint index is even, or if the inverse is true
             if (modules[i].IsFirstJointPan() ^ (j % 2 != 0))
             {
                 Eigen::Vector3d actuationAxis = GetTransformRotation(jointTransform) * xAxis;
                 jointCrossProduct = actuationAxis.cross(endPosition - GetTransformPosition(jointTransform));
 
-                PrintMatrix(jointCrossProduct, "Joint cross product");
+                // PrintMatrix(jointCrossProduct, "Joint cross product");
 
                 jointJacobianColumn << jointCrossProduct, actuationAxis;
 
@@ -316,7 +293,7 @@ Eigen::MatrixXd GetJacobian(const TransformVector& jointTransforms, const Manipu
                 Eigen::Vector3d actuationAxis = GetTransformRotation(jointTransform) * yAxis;
                 jointCrossProduct = actuationAxis.cross(endPosition - GetTransformPosition(jointTransform));
 
-                PrintMatrix(jointCrossProduct, "Joint cross product");
+                // PrintMatrix(jointCrossProduct, "Joint cross product");
 
                 jointJacobianColumn << jointCrossProduct, actuationAxis;
 
@@ -327,8 +304,8 @@ Eigen::MatrixXd GetJacobian(const TransformVector& jointTransforms, const Manipu
         modulePanJacobianColumn /= modules[i].GetNumPanJoints();
         moduleTiltJacobianColumn /= modules[i].GetNumTiltJoints();
 
-        PrintMatrix(modulePanJacobianColumn, "Pan Jacobian column post-division");
-        PrintMatrix(moduleTiltJacobianColumn, "Tilt Jacobian column post-division");
+        // PrintMatrix(modulePanJacobianColumn, "Pan Jacobian column post-division");
+        // PrintMatrix(moduleTiltJacobianColumn, "Tilt Jacobian column post-division");
 
         if (modules[i].IsFirstJointPan())
         {
@@ -386,12 +363,12 @@ Eigen::Vector4d GetMotorPositionsFromJointPositions(const ManipulatorModule& pro
         proximal.GetNumTiltJoints() * (1 - cos(proximal.GetTiltJointAngle() / 2))
     );
 
-    ROS_INFO("test: %.6f", test);
+    // ROS_INFO("test: %.6f", test);
 
     double proximalPanLengthDelta = proximal.GetIsolatedPanLengthDelta();
     double proximalTiltLengthDelta = proximal.GetIsolatedTiltLengthDelta();
 
-    ROS_INFO("prox. pan: %.6f, prox. tilt: %.6f", proximalPanLengthDelta, proximalTiltLengthDelta);
+    // ROS_INFO("prox. pan: %.6f, prox. tilt: %.6f", proximalPanLengthDelta, proximalTiltLengthDelta);
 
     motorPositions(0) = proximalPanLengthDelta * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
     motorPositions(1) = proximalTiltLengthDelta * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
@@ -408,12 +385,12 @@ Eigen::Vector4d GetMotorPositionsFromJointPositions(const ManipulatorModule& pro
     // The contribution of the proximal joint positions to the length delta of the distal tendons
     double distalLengthDeltaDueToProximalJoints = proximalPanLengthDelta + proximalTiltLengthDelta + distalTendonProximalJointOffset;
 
-    ROS_INFO("dLengthDelta: %.6f", distalLengthDeltaDueToProximalJoints);
+    // ROS_INFO("dLengthDelta: %.6f", distalLengthDeltaDueToProximalJoints);
 
     motorPositions(2) = (distal.GetIsolatedPanLengthDelta() + distalLengthDeltaDueToProximalJoints) * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
     motorPositions(3) = (distal.GetIsolatedTiltLengthDelta() + distalLengthDeltaDueToProximalJoints) * LENGTH_DELTA_TO_PULLEY_ROTATION_DEGREES;
 
-    ROS_INFO("dist. pan: %.6f, dist. tilt: %.6f", motorPositions(0), motorPositions(1));
+    // ROS_INFO("dist. pan: %.6f, dist. tilt: %.6f", motorPositions(0), motorPositions(1));
 
     return motorPositions;
 }
@@ -432,7 +409,7 @@ Eigen::Vector4d GetJointPositionsFromMotorPositions(const Eigen::Vector4d& motor
     proximalJacobian << -proximalRadiusRatio * sin(proximal.GetHalfCurvatureAngle() - proximalHalfPanJointAngle), proximalRadiusRatio * sin(proximalHalfTiltJointAngle),
                          proximalRadiusRatio * sin(proximalHalfPanJointAngle), -proximalRadiusRatio * sin(proximal.GetHalfCurvatureAngle() - proximalHalfTiltJointAngle);
 
-    PrintMatrix(proximalJacobian, "Proximal Actuator Jacobian");
+    // PrintMatrix(proximalJacobian, "Proximal Actuator Jacobian");
 
     double distalRadiusRatio = distal.GetCurvatureRadius() / PULLEY_WHEEL_RADIUS;
     double distalHalfPanJointAngle = distal.GetPanJointAngle() / 2;
@@ -452,14 +429,14 @@ Eigen::Vector4d GetJointPositionsFromMotorPositions(const Eigen::Vector4d& motor
                        distalRadiusRatio * sin(distalHalfPanJointAngle),
                        -distalRadiusRatio * sin(distal.GetHalfCurvatureAngle() - distalHalfTiltJointAngle);
 
-    PrintMatrix(distalJacobian, "Distal Actuator Jacobian");
+    // PrintMatrix(distalJacobian, "Distal Actuator Jacobian");
 
     // Combine proximal and distal Jacobians. Note that the distal motor angles have no effect on the proximal joint positions
     Eigen::Matrix4d combinedJacobian = Eigen::Matrix4d::Zero();
     combinedJacobian.block(0, 0, 2, 2) = proximalJacobian;
     combinedJacobian.block(2, 0, 2, 4) = distalJacobian;
 
-    PrintMatrix(combinedJacobian, "Combined Jacobian");
+    // PrintMatrix(combinedJacobian, "Combined Jacobian");
 
     jointPositions = combinedJacobian * motorStates;
 
@@ -543,6 +520,17 @@ Eigen::Matrix3d tf2QuaternionToEigenRotationMatrix(const tf2::Quaternion& quater
     return rotationMatrix;
 }
 
+void motorStatesCallback(const motor_angles_msg::MotorAngles::ConstPtr& motorStates, Eigen::VectorXd& motorStatesCache, Eigen::VectorXd& motorCommands, bool& hasReceivedMotorStates)
+{
+    if (!hasReceivedMotorStates)
+    {
+        motorCommands = motorStatesCache;
+    }
+
+    hasReceivedMotorStates = true;
+    motorStatesCache << motorStates->proximal_pan_angle, motorStates->proximal_tilt_angle, motorStates->distal_pan_angle, motorStates->distal_tilt_angle;
+}
+
 int main(int argc, char **argv)
 {
     Pose touchOriginPose;
@@ -570,6 +558,11 @@ int main(int argc, char **argv)
     bool isGreyButtonPressed = false;
     bool isWhiteButtonPressed = false;
 
+    bool hasReceivedMotorStates = false;
+
+    Eigen::VectorXd motorStates(4);
+    Eigen::VectorXd motorCommands(4);
+
     ros::Subscriber touchButtonSubscriber = nodeHandle.subscribe<omni_msgs::OmniButtonEvent>(
         "/phantom/button",
         1,
@@ -582,6 +575,20 @@ int main(int argc, char **argv)
             boost::ref(touchOriginPose)
         )
     );
+
+    ros::Subscriber motorStatesSubscriber = nodeHandle.subscribe<motor_angles_msg::MotorAngles>(
+        "micro_module_motor_states",
+        1,
+        boost::bind(
+            &motorStatesCallback,
+            _1,
+            boost::ref(motorStates),
+            boost::ref(motorCommands),
+            boost::ref(hasReceivedMotorStates)
+        )
+    );
+
+    ros::Publisher motorCommandsPublisher = nodeHandle.advertise<motor_angles_msg::MotorAngles>("micro_module_motor_command", 1);
 
     ManipulatorModule proximal(
         true,
@@ -598,45 +605,6 @@ int main(int argc, char **argv)
         DISTAL_NUM_JOINTS,
         DISTAL_JOINT_SEPARATION
     );
-
-    serialib serial;
-
-    // Connection to serial port
-    char wasOpenSuccessful = serial.openDevice(SERIAL_PORT, BAUD_RATE);
-
-    // If connection fails, return the error code otherwise, display a success message
-    if (wasOpenSuccessful != 1)
-    {
-        std::cout << "Failed to connect to " << SERIAL_PORT << "\n";
-        return wasOpenSuccessful;
-    }
-
-    std::cout << "Successful connection to " << SERIAL_PORT << "\n";
-
-    Eigen::Vector4d motorStates;
-
-    int motor1Pos = 90;
-    int motor2Pos = 90;
-    int motor3Pos = 90;
-    int motor4Pos = 90;
-
-    char *motorStateReadBuffer = (char *)malloc(MAX_RETURN_BYTES * sizeof(char));
-
-    std::cout << "Awaiting startup message...\n";
-
-    while (!ReadMotorPositions(motorStateReadBuffer, motor1Pos, motor2Pos, motor3Pos, motor4Pos))
-    {
-        memset(motorStateReadBuffer, 0, MAX_RETURN_BYTES * sizeof(char));
-        serial.readString(motorStateReadBuffer, '\n', MAX_RETURN_BYTES, 100);
-    }
-
-    std::cout << "Read string " << motorStateReadBuffer << "\n";
-    std::cout << "Read motor equilibrium angles: " << motor1Pos << ", " << motor2Pos << ", " << motor3Pos << ", " << motor4Pos << "\n";
-
-    free(motorStateReadBuffer);
-
-    // Set initial motor states
-    motorStates << motor1Pos, motor2Pos, motor3Pos, motor4Pos;
 
     // Offset of end effector tip from centre of final manipulator joint
     Eigen::Vector3d endEffectorTipPositionOffset;
@@ -695,14 +663,12 @@ int main(int argc, char **argv)
 
     Eigen::Matrix3d movementRotation;
 
-    std::ostringstream commandStream;
-
     ros::Duration duration(0.5, 0);
 
     while (ros::ok())
     {
         // Enable manipulator teleoperation if user is pressing the grey button on the Touch
-        if (isGreyButtonPressed)
+        if (isGreyButtonPressed && hasReceivedMotorStates)
         {
             // Update Touch orientation delta (in manipulator coordinate frame)
             touchPoseDelta.orientation = (touchToManipulatorRotation * currentTouchPose.orientation) * (touchToManipulatorRotation * touchOriginPose.orientation).inverse();
@@ -729,18 +695,10 @@ int main(int argc, char **argv)
 
             TransformVector jointTransforms = GetJointTransforms(baseTransform, endEffectorTransform, proximal, distal);
 
-            // for (int i = 0; i < jointTransforms.size(); i++)
-            // {
-            //     std::stringstream stream;
-            //     stream << "Transform " << i + 1;
-            //     PrintMatrix(jointTransforms[i], stream.str().c_str());
-            // }
-
             endPosition = GetTransformPosition(jointTransforms.back());
             endRotation = GetTransformRotation(jointTransforms.back());
 
             Eigen::MatrixXd jacobian = GetJacobian(jointTransforms, proximal, distal);
-            // Eigen::MatrixXd truncatedJacobian = jacobian.block(0, 0, 3, jacobian.cols());
 
             // PrintMatrix(jacobian, "Jacobian");
 
@@ -775,27 +733,30 @@ int main(int argc, char **argv)
 
             Eigen::Vector4d stateDelta = GetMotorPositionsFromJointPositions(proximal, distal);
 
-            motorStates += stateDelta;
+            motorCommands += stateDelta;
 
-            ROS_INFO("%.6f %.6f %.6f %.6f", motorStates(0), motorStates(1), motorStates(2), motorStates(3));
+            ROS_INFO("Sending motor commands: %.6f %.6f %.6f %.6f", motorCommands(0), motorCommands(1), motorCommands(2), motorCommands(3));
 
-            motor1Pos = round(motorStates(0));
-            motor2Pos = round(motorStates(1));
-            motor3Pos = round(motorStates(2));
-            motor4Pos = round(motorStates(3));
+            motor_angles_msg::MotorAngles motorCommandsMsg;
+            motorCommandsMsg.proximal_pan_angle = motorCommands(0);
+            motorCommandsMsg.proximal_tilt_angle = motorCommands(1);
+            motorCommandsMsg.distal_pan_angle = motorCommands(2);
+            motorCommandsMsg.distal_tilt_angle = motorCommands(3);
 
-            commandStream << std::setfill('0') << std::setw(3) << motor1Pos << std::setfill('0') << std::setw(3) << motor2Pos << std::setfill('0') << std::setw(3) << motor3Pos << std::setfill('0') << std::setw(3) << motor4Pos << '\n';
+            motorCommandsPublisher.publish(motorCommandsMsg);
 
-            serial.writeString(commandStream.str().c_str());
+            // commandStream << std::setfill('0') << std::setw(3) << motor1Pos << std::setfill('0') << std::setw(3) << motor2Pos << std::setfill('0') << std::setw(3) << motor3Pos << std::setfill('0') << std::setw(3) << motor4Pos << '\n';
 
-            while (!ReadMotorPositions(motorStateReadBuffer, motor1Pos, motor2Pos, motor3Pos, motor4Pos))
-            {
-                memset(motorStateReadBuffer, 0, MAX_RETURN_BYTES * sizeof(char));
-                serial.readString(motorStateReadBuffer, '\n', MAX_RETURN_BYTES, 100);
-            }
+            // serial.writeString(commandStream.str().c_str());
 
-            memset(motorStateReadBuffer, 0, MAX_RETURN_BYTES * sizeof(char));
-            commandStream.str("");
+            // while (!ReadMotorPositions(motorStateReadBuffer, motor1Pos, motor2Pos, motor3Pos, motor4Pos))
+            // {
+            //     memset(motorStateReadBuffer, 0, MAX_RETURN_BYTES * sizeof(char));
+            //     serial.readString(motorStateReadBuffer, '\n', MAX_RETURN_BYTES, 100);
+            // }
+
+            // memset(motorStateReadBuffer, 0, MAX_RETURN_BYTES * sizeof(char));
+            // commandStream.str("");
 
             duration.sleep();
         }

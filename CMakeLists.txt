@@ -60,10 +60,8 @@ add_library(motor_group_state src/MotorGroupState.cpp)
 add_library(serialib src/serialib.cpp)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
+# add_message_files(FILES
+# 		MotorAngles.msg
 # )
 
 ## Generate services in the 'srv' folder
@@ -118,7 +116,7 @@ add_library(serialib src/serialib.cpp)
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES touch_sub
-   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf2 tf2_ros kdl_parser kdl_conversions controller_manager_msgs visualization_msgs rosbag
+   CATKIN_DEPENDS roscpp rospy std_msgs omni_msgs sensor_msgs tf2 tf2_ros kdl_parser kdl_conversions controller_manager_msgs visualization_msgs rosbag motor_angles_msg
 #  DEPENDS system_lib
 )
 
