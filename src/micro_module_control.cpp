@@ -18,9 +18,23 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <rosbag/bag.h>
 #include "../include/ManipulatorModule.hpp"
+#include "../include/Pose.hpp"
+#include "../include/serialib.h"
 #include <Eigen/Dense>
 #include <Eigen/SVD>
 #include <Eigen/StdVector>
+#include <Eigen/Geometry>
+
+const char* SERIAL_PORT  = "/dev/ttyACM0";
+const int BAUD_RATE = 9600;
+const int MAX_RETURN_BYTES = 16;
+const int MOTOR_STATE_STRING_LENGTH = 13;
+
+// Touch position coordinates are output in millimetres, must convert to metres
+const double TOUCH_POSITION_UNIT_SCALE_FACTOR = 1e-3;
+
+// Factor by which Touch rotational movements are scaled before being sent to the manipulator
+const double MANIPULATOR_ROTATION_SCALE_FACTOR = 0.2;
 
 // Maximum joint velocity for a single update, in metres per second
 const double JOINT_UPDATE_MAX_VELOCITY = 0.001;
@@ -71,6 +85,41 @@ const double DISTAL_LENGTH = 0.00288;
 const double LEAST_SQUARES_DAMPING_FACTOR = 1;
 
 typedef std::vector<Eigen::Matrix4d,Eigen::aligned_allocator<Eigen::Matrix4d> > TransformVector;
+
+std::string QuaternionToString(tf2::Quaternion quaternion)
+{
+    std::stringstream output;
+
+    output << "x: "
+        << quaternion.getX()
+        << ", y: "
+        << quaternion.getY()
+        << ", z: "
+        << quaternion.getZ()
+        << ", w: "
+        << quaternion.getW()
+        << ")";
+
+    return output.str();
+}
+
+bool ReadMotorPositions(char* motorStateBuffer, int& motor1Pos, int&motor2Pos, int& motor3Pos, int& motor4Pos)
+{
+    // Read motor equilibrium angles from control board
+    if (strlen(motorStateBuffer) != MOTOR_STATE_STRING_LENGTH)
+    {
+        return false;
+    }
+
+    std::string motorState(motorStateBuffer);
+
+    motor1Pos = std::stoi(motorState.substr(0,3));
+    motor2Pos = std::stoi(motorState.substr(3,3));
+    motor3Pos = std::stoi(motorState.substr(6,3));
+    motor4Pos = std::stoi(motorState.substr(9,3));
+
+    return true;
+}
 
 void PrintMatrix(const Eigen::MatrixXd& matrix, const char* title)
 {
@@ -410,7 +459,9 @@ Eigen::Vector4d GetJointPositionsFromMotorPositions(const Eigen::Vector4d& motor
     combinedJacobian.block(0, 0, 2, 2) = proximalJacobian;
     combinedJacobian.block(2, 0, 2, 4) = distalJacobian;
 
-    jointPositions = combinedJacobian * motorStates.inverse();
+    PrintMatrix(combinedJacobian, "Combined Jacobian");
+
+    jointPositions = combinedJacobian * motorStates;
 
     return jointPositions;
 }
@@ -434,8 +485,104 @@ Eigen::VectorXd GetPoseDelta(const Eigen::Vector3d& currentPosition, const Eigen
     return poseDelta;
 }
 
+Eigen::VectorXd CapVectorMagnitude(const Eigen::VectorXd& vector, const double maxMagnitude)
+{
+    Eigen::VectorXd cappedVector = maxMagnitude * vector.normalized();
+
+    return cappedVector;
+}
+
+void touchStateCallback(
+    const omni_msgs::OmniState::ConstPtr& omniState,
+    Pose& currentPose
+)
+{
+    tf2::fromMsg(omniState->pose.position, currentPose.position);
+
+    // Scale touch position units to metres
+    currentPose.position *= TOUCH_POSITION_UNIT_SCALE_FACTOR;
+
+    tf2::fromMsg(omniState->pose.orientation, currentPose.orientation);
+
+    geometry_msgs::Vector3 current = omniState->current;
+}
+
+void touchButtonCallback(
+    const omni_msgs::OmniButtonEvent::ConstPtr& omniButtonStates,
+    bool& isGreyButtonPressed,
+    bool& isWhiteButtonPressed,
+    Pose& currentTouchPose,
+    Pose& touchOriginPose
+)
+{
+    // Update control origin poses if white button was just pressed
+    if (omniButtonStates->grey_button && !isGreyButtonPressed)
+    {
+        touchOriginPose.position = currentTouchPose.position;
+        touchOriginPose.orientation = currentTouchPose.orientation;
+    }
+
+    isGreyButtonPressed = (bool)omniButtonStates->grey_button;
+    isWhiteButtonPressed = (bool)omniButtonStates->white_button;
+}
+
+tf2::Quaternion EigenRotationMatrixToTF2Quaternion(const Eigen::Matrix3d& rotation)
+{
+    Eigen::Quaterniond eigenQuat(rotation);
+    tf2::Quaternion tf2Quat = tf2::Quaternion(eigenQuat.x(), eigenQuat.y(), eigenQuat.z(), eigenQuat.w());
+
+    return tf2Quat;
+}
+
+Eigen::Matrix3d tf2QuaternionToEigenRotationMatrix(const tf2::Quaternion& quaternion)
+{
+    Eigen::Quaterniond eigenQuat(quaternion.getW(), quaternion.getX(), quaternion.getY(), quaternion.getZ());
+
+    Eigen::Matrix3d rotationMatrix = eigenQuat.toRotationMatrix();
+
+    return rotationMatrix;
+}
+
 int main(int argc, char **argv)
 {
+    Pose touchOriginPose;
+    Eigen::Matrix3d endOriginRotation;
+
+    Eigen::Matrix3d endRotation;
+    Pose currentTouchPose;
+    geometry_msgs::PoseStamped currentUR5EPoseStamped;
+
+    Pose touchPoseDelta;
+
+    ros::init(argc, argv, "micro_module_control");
+    ros::NodeHandle nodeHandle;
+
+    ros::Subscriber touchStateSubscriber = nodeHandle.subscribe<omni_msgs::OmniState>(
+        "/phantom/state",
+        1,
+        boost::bind(
+            &touchStateCallback,
+            _1,
+            boost::ref(currentTouchPose)
+        )
+    );
+
+    bool isGreyButtonPressed = false;
+    bool isWhiteButtonPressed = false;
+
+    ros::Subscriber touchButtonSubscriber = nodeHandle.subscribe<omni_msgs::OmniButtonEvent>(
+        "/phantom/button",
+        1,
+        boost::bind(
+            &touchButtonCallback,
+            _1,
+            boost::ref(isGreyButtonPressed),
+            boost::ref(isWhiteButtonPressed),
+            boost::ref(currentTouchPose),
+            boost::ref(touchOriginPose)
+        )
+    );
+
     ManipulatorModule proximal(
         true,
         MANIPULATOR_DIAMETER,
@@ -451,6 +598,45 @@ int main(int argc, char **argv)
         DISTAL_NUM_JOINTS,
         DISTAL_JOINT_SEPARATION
     );
+
+    serialib serial;
+
+    // Connection to serial port
+    char wasOpenSuccessful = serial.openDevice(SERIAL_PORT, BAUD_RATE);
+
+    // If connection fails, return the error code otherwise, display a success message
+    if (wasOpenSuccessful != 1)
+    {
+        std::cout << "Failed to connect to " << SERIAL_PORT << "\n";
+        return wasOpenSuccessful;
+    }
+
+    std::cout << "Successful connection to " << SERIAL_PORT << "\n";
+
+    Eigen::Vector4d motorStates;
+
+    int motor1Pos = 90;
+    int motor2Pos = 90;
+    int motor3Pos = 90;
+    int motor4Pos = 90;
+
+    char *motorStateReadBuffer = (char *)malloc(MAX_RETURN_BYTES * sizeof(char));
+
+    std::cout << "Awaiting startup message...\n";
+
+    while (!ReadMotorPositions(motorStateReadBuffer, motor1Pos, motor2Pos, motor3Pos, motor4Pos))
+    {
+        memset(motorStateReadBuffer, 0, MAX_RETURN_BYTES * sizeof(char));
+        serial.readString(motorStateReadBuffer, '\n', MAX_RETURN_BYTES, 100);
+    }
+
+    std::cout << "Read string " << motorStateReadBuffer << "\n";
+    std::cout << "Read motor equilibrium angles: " << motor1Pos << ", " << motor2Pos << ", " << motor3Pos << ", " << motor4Pos << "\n";
+
+    free(motorStateReadBuffer);
+
+    // Set initial motor states
+    motorStates << motor1Pos, motor2Pos, motor3Pos, motor4Pos;
 
     // Offset of end effector tip from centre of final manipulator joint
     Eigen::Vector3d endEffectorTipPositionOffset;
@@ -495,56 +681,127 @@ int main(int argc, char **argv)
 
     Eigen::Matrix4d baseTransform = Eigen::Matrix4d::Identity();
 
-    TransformVector jointTransforms = GetJointTransforms(baseTransform, endEffectorTransform, proximal, distal);
+    // Fixed transformation quaternion between touch and manipulator frames
+    tf2::Quaternion touchToManipulatorRotation;
+    touchToManipulatorRotation.setRPY(0, 0, 0);
 
-    for (int i = 0; i < jointTransforms.size(); i++)
+    Eigen::Vector3d endPosition = Eigen::Vector3d::Zero();
+
+    tf2::Quaternion manipulatorOrientation;
+    tf2::Quaternion manipulatorOriginOrientation;
+    tf2::Quaternion manipulatorOrientationDelta;
+
+    tf2::Quaternion movementOrientationDelta;
+
+    Eigen::Matrix3d movementRotation;
+
+    std::ostringstream commandStream;
+
+    ros::Duration duration(0.5, 0);
+
+    while (ros::ok())
     {
-        std::stringstream stream;
-        stream << "Transform " << i + 1;
-        PrintMatrix(jointTransforms[i], stream.str().c_str());
+        // Enable manipulator teleoperation if user is pressing the grey button on the Touch
+        if (isGreyButtonPressed)
+        {
+            // Update Touch orientation delta (in manipulator coordinate frame)
+            touchPoseDelta.orientation = (touchToManipulatorRotation * currentTouchPose.orientation) * (touchToManipulatorRotation * touchOriginPose.orientation).inverse();
+
+            ROS_INFO_THROTTLE(1, "Touch orientation delta: %s", QuaternionToString(touchPoseDelta.orientation).c_str());
+
+            ROS_INFO_THROTTLE(
+                1,
+                "Current Maniulator Orientation: %s, Manipulator origin orientation: %s",
+                QuaternionToString(manipulatorOrientation).c_str(),
+                QuaternionToString(manipulatorOriginOrientation).c_str()
+            );
+
+            manipulatorOrientation = EigenRotationMatrixToTF2Quaternion(endRotation);
+            manipulatorOriginOrientation = EigenRotationMatrixToTF2Quaternion(endOriginRotation);
+            manipulatorOrientationDelta = manipulatorOrientation * manipulatorOriginOrientation.inverse();
+
+            ROS_INFO_THROTTLE(1, "Manipulator orientation delta: %s", QuaternionToString(manipulatorOrientationDelta).c_str());
+
+            // Final movement orientation delta is difference between Touch and manipulator orientation deltas
+            movementOrientationDelta = touchPoseDelta.orientation * manipulatorOrientationDelta.inverse();
+
+            movementRotation = tf2QuaternionToEigenRotationMatrix(movementOrientationDelta);
+
+            TransformVector jointTransforms = GetJointTransforms(baseTransform, endEffectorTransform, proximal, distal);
+
+            // for (int i = 0; i < jointTransforms.size(); i++)
+            // {
+            //     std::stringstream stream;
+            //     stream << "Transform " << i + 1;
+            //     PrintMatrix(jointTransforms[i], stream.str().c_str());
+            // }
+
+            endPosition = GetTransformPosition(jointTransforms.back());
+            endRotation = GetTransformRotation(jointTransforms.back());
+
+            Eigen::MatrixXd jacobian = GetJacobian(jointTransforms, proximal, distal);
+            // Eigen::MatrixXd truncatedJacobian = jacobian.block(0, 0, 3, jacobian.cols());
+
+            // PrintMatrix(jacobian, "Jacobian");
+
+            Eigen::MatrixXd inverseJacobian = GetInverseJacobian(jacobian, LEAST_SQUARES_DAMPING_FACTOR);
+
+            // PrintMatrix(inverseJacobian, "Inverse Jacobian");
+
+            Eigen::Vector3d desiredPos = endPosition;
+
+            Eigen::Matrix3d desiredRot = movementRotation * endRotation;
+
+            Eigen::VectorXd poseDelta = GetPoseDelta(endPosition, desiredPos, endRotation, desiredRot);
+
+            // PrintMatrix(poseDelta, "Pose delta");
+
+            if (poseDelta.norm() > JOINT_UPDATE_MAX_VELOCITY)
+            {
+                poseDelta = CapVectorMagnitude(poseDelta, JOINT_UPDATE_MAX_VELOCITY).eval();
+            }
+
+            // PrintMatrix(poseDelta, "Capped pose delta");
+
+            Eigen::Vector4d jointDeltas = inverseJacobian * poseDelta;
+
+            // PrintMatrix(jointDeltas, "Final joint deltas");
+
+            proximal.ApplyPanAngleDelta(jointDeltas(0));
+            proximal.ApplyTiltAngleDelta(jointDeltas(1));
+
+            distal.ApplyPanAngleDelta(jointDeltas(2));
+            distal.ApplyTiltAngleDelta(jointDeltas(3));
+
+            Eigen::Vector4d stateDelta = GetMotorPositionsFromJointPositions(proximal, distal);
+
+            motorStates += stateDelta;
+
+            ROS_INFO("%.6f %.6f %.6f %.6f", motorStates(0), motorStates(1), motorStates(2), motorStates(3));
+
+            motor1Pos = round(motorStates(0));
+            motor2Pos = round(motorStates(1));
+            motor3Pos = round(motorStates(2));
+            motor4Pos = round(motorStates(3));
+
+            commandStream << std::setfill('0') << std::setw(3) << motor1Pos << std::setfill('0') << std::setw(3) << motor2Pos << std::setfill('0') << std::setw(3) << motor3Pos << std::setfill('0') << std::setw(3) << motor4Pos << '\n';
+
+            serial.writeString(commandStream.str().c_str());
+
+            while (!ReadMotorPositions(motorStateReadBuffer, motor1Pos, motor2Pos, motor3Pos, motor4Pos))
+            {
+                memset(motorStateReadBuffer, 0, MAX_RETURN_BYTES * sizeof(char));
+                serial.readString(motorStateReadBuffer, '\n', MAX_RETURN_BYTES, 100);
+            }
+
+            memset(motorStateReadBuffer, 0, MAX_RETURN_BYTES * sizeof(char));
+            commandStream.str("");
+
+            duration.sleep();
+        }
+
+        ros::spinOnce();
     }
-
-    Eigen::Vector3d endPosition = GetTransformPosition(jointTransforms.back());
-    Eigen::Matrix3d endRotation = GetTransformRotation(jointTransforms.back());
-
-    Eigen::MatrixXd jacobian = GetJacobian(jointTransforms, proximal, distal);
-    // Eigen::MatrixXd truncatedJacobian = jacobian.block(0, 0, 3, jacobian.cols());
-
-    PrintMatrix(jacobian, "Jacobian");
-
-    Eigen::MatrixXd inverseJacobian = GetInverseJacobian(jacobian, LEAST_SQUARES_DAMPING_FACTOR);
-
-    PrintMatrix(inverseJacobian, "Inverse Jacobian");
-
-    Eigen::Vector4d motorStates;
-    motorStates << 90, 90, 90, 90;
-
-    Eigen::Vector3d desiredPos;
-    // desiredPos << 0.01, 0.01, 0.0152934;
-    desiredPos = endPosition;
-
-    Eigen::Matrix3d desiredRot;
-    desiredRot = xRotationMatrix(M_PI_4 / 2);
-
-    Eigen::VectorXd poseDelta = GetPoseDelta(endPosition, desiredPos, endRotation, desiredRot);
-
-    PrintMatrix(poseDelta, "Pose delta");
-
-    Eigen::Vector4d jointDeltas = inverseJacobian * poseDelta;
-
-    PrintMatrix(jointDeltas, "Final joint deltas");
-
-    proximal.ApplyPanAngleDelta(jointDeltas(0));
-    proximal.ApplyTiltAngleDelta(jointDeltas(1));
-
-    distal.ApplyPanAngleDelta(jointDeltas(2));
-    distal.ApplyTiltAngleDelta(jointDeltas(3));
-
-    Eigen::Vector4d stateDelta = GetMotorPositionsFromJointPositions(proximal, distal);
-
-    motorStates += stateDelta;
-
-    ROS_INFO("%.6f %.6f %.6f %.6f", motorStates(0), motorStates(1), motorStates(2), motorStates(3));
 
     return 0;
 }
