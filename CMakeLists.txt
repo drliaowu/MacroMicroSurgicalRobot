@@ -56,8 +56,6 @@ find_package(catkin REQUIRED COMPONENTS
 
 add_library(manipulator_module src/ManipulatorModule.cpp)
 add_library(pose src/Pose.cpp)
-add_library(motor_group_state src/MotorGroupState.cpp)
-add_library(serialib src/serialib.cpp)
 
 ## Generate messages in the 'msg' folder
 # add_message_files(FILES
@@ -221,9 +219,7 @@ add_executable(ur5e_control src/ur5e_control.cpp)
 target_link_libraries(ur5e_control ${catkin_LIBRARIES} pose)
 
 add_executable(micro_module_control src/micro_module_control.cpp)
-target_link_libraries(micro_module_control ${catkin_LIBRARIES} manipulator_module pose serialib)
+target_link_libraries(micro_module_control ${catkin_LIBRARIES} manipulator_module pose)
 
 add_executable(android_pose_subscriber src/android_pose_subscriber.cpp)
 target_link_libraries(android_pose_subscriber ${catkin_LIBRARIES})
-
-add_dependencies(micro_module_control ${catkin_EXPORTED_TARGETS})
