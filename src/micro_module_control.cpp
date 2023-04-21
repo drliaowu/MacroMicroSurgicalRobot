@@ -30,13 +30,13 @@
 const double TOUCH_POSITION_UNIT_SCALE_FACTOR = 1e-3;
 
 // Factor by which Touch rotational movements are scaled before being sent to the manipulator
-const double MANIPULATOR_ROTATION_SCALE_FACTOR = 0.01;
+const double MANIPULATOR_ROTATION_SCALE_FACTOR = 0.02;
 
-// Maximum joint velocity for a single update, in metres per second
-const double JOINT_UPDATE_MAX_VELOCITY = 0.100;
+// Maximum joint movement distance for a single update, in metres
+const double JOINT_UPDATE_MAX_VELOCITY = 0.1;
 
 // Maximum error in end-effector pose, in metres
-const double MAX_POSE_ERROR = 0.002;
+const double MAX_POSE_ERROR = 0.00001;
 
 // Diameter of the manipulator, in metres
 const double MANIPULATOR_DIAMETER = 0.004;
@@ -507,7 +507,8 @@ Eigen::VectorXd CapVectorMagnitude(const Eigen::VectorXd& vector, const double m
 
 void touchStateCallback(
     const omni_msgs::OmniState::ConstPtr& omniState,
-    Pose& currentPose
+    Pose& currentPose,
+    rosbag::Bag& touchStateBag
 )
 {
     tf2::fromMsg(omniState->pose.position, currentPose.position);
@@ -518,6 +519,11 @@ void touchStateCallback(
     tf2::fromMsg(omniState->pose.orientation, currentPose.orientation);
 
     geometry_msgs::Vector3 current = omniState->current;
+
+    if (touchStateBag.isOpen())
+    {
+        touchStateBag.write("/phantom/state", ros::Time::now(), omniState);
+    }
 }
 
 void touchButtonCallback(
@@ -525,7 +531,8 @@ void touchButtonCallback(
     bool& isGreyButtonPressed,
     bool& isWhiteButtonPressed,
     Pose& currentTouchPose,
-    Pose& touchOriginPose
+    Pose& touchOriginPose,
+    rosbag::Bag& touchStateBag
 )
 {
     // Update control origin poses if white button was just pressed
@@ -537,6 +544,11 @@ void touchButtonCallback(
 
     isGreyButtonPressed = (bool)omniButtonStates->grey_button;
     isWhiteButtonPressed = (bool)omniButtonStates->white_button;
+
+    if (touchStateBag.isOpen())
+    {
+        touchStateBag.write("/phantom/button", ros::Time::now(), omniButtonStates);
+    }
 }
 
 tf2::Quaternion EigenRotationMatrixToTF2Quaternion(const Eigen::Matrix3d& rotation)
@@ -556,15 +568,28 @@ Eigen::Matrix3d tf2QuaternionToEigenRotationMatrix(const tf2::Quaternion& quater
     return rotationMatrix;
 }
 
-void motorStatesCallback(const motor_angles_msg::MotorAngles::ConstPtr& motorStates, Eigen::VectorXd& motorStatesCache, Eigen::VectorXd& motorCommands, bool& hasReceivedMotorStates)
+void motorStatesCallback(
+    const motor_angles_msg::MotorAngles::ConstPtr& motorStates,
+    Eigen::VectorXd& motorStatesCache,
+    Eigen::VectorXd& motorCommands,
+    bool& hasReceivedMotorStates,
+    rosbag::Bag& motorAnglesBag
+)
 {
+    motorStatesCache << motorStates->proximal_pan_angle, motorStates->proximal_tilt_angle, motorStates->distal_pan_angle, motorStates->distal_tilt_angle;
+
     if (!hasReceivedMotorStates)
     {
         motorCommands = motorStatesCache;
+        PrintMatrix(motorCommands, "Setting motor commands to");
     }
 
     hasReceivedMotorStates = true;
-    motorStatesCache << motorStates->proximal_pan_angle, motorStates->proximal_tilt_angle, motorStates->distal_pan_angle, motorStates->distal_tilt_angle;
+
+    if (motorAnglesBag.isOpen())
+    {
+        motorAnglesBag.write("micro_module_motor_states", ros::Time::now(), motorStates);
+    }
 }
 
 void motorMinAnglesCallback(const motor_angles_msg::MotorAngles::ConstPtr& motorMinAngles, Eigen::VectorXd& motorMinAnglesCache, bool& hasReceivedMotorMinAngles)
@@ -596,7 +621,28 @@ int main(int argc, char **argv)
     Pose touchPoseDelta;
 
     ros::init(argc, argv, "micro_module_control");
-    ros::NodeHandle nodeHandle;
+    ros::NodeHandle nodeHandle("~");
+
+    rosbag::Bag touchStateBag;
+    rosbag::Bag motorAnglesBag;
+
+    std::string dataLabel;
+    nodeHandle.getParam("data_label", dataLabel);
+
+    if (dataLabel.length() > 0)
+    {
+        std::string packagePath = ros::package::getPath("ls_thesis");
+
+        std::stringstream microModuleDataPath;
+        microModuleDataPath << packagePath << "/data/micro_module/" << dataLabel << ".bag";
+
+        motorAnglesBag.open(microModuleDataPath.str(), rosbag::bagmode::Write);
+
+        std::stringstream touchDataPath;
+        touchDataPath << packagePath << "/data/touch/" << dataLabel << "_micro_module.bag";
+
+        touchStateBag.open(touchDataPath.str(), rosbag::bagmode::Write);
+    }
 
     ros::Subscriber touchStateSubscriber = nodeHandle.subscribe<omni_msgs::OmniState>(
         "/phantom/state",
@@ -604,7 +650,8 @@ int main(int argc, char **argv)
         boost::bind(
             &touchStateCallback,
             _1,
-            boost::ref(currentTouchPose)
+            boost::ref(currentTouchPose),
+            boost::ref(touchStateBag)
         )
     );
 
@@ -629,7 +676,8 @@ int main(int argc, char **argv)
             boost::ref(isGreyButtonPressed),
             boost::ref(isWhiteButtonPressed),
             boost::ref(currentTouchPose),
-            boost::ref(touchOriginPose)
+            boost::ref(touchOriginPose),
+            boost::ref(touchStateBag)
         )
     );
 
@@ -641,7 +689,8 @@ int main(int argc, char **argv)
             _1,
             boost::ref(motorStates),
             boost::ref(motorCommands),
-            boost::ref(hasReceivedMotorStates)
+            boost::ref(hasReceivedMotorStates),
+            boost::ref(motorAnglesBag)
         )
     );
 
@@ -754,7 +803,7 @@ int main(int argc, char **argv)
     Eigen::Vector4d jointPositions;
     jointPositions << proximal.GetPanJointAngle(), proximal.GetTiltJointAngle(), distal.GetPanJointAngle(), distal.GetTiltJointAngle();
 
-    ros::Rate rate(10);
+    ros::Rate rate(60);
 
     while (ros::ok())
     {
@@ -768,6 +817,7 @@ int main(int argc, char **argv)
         {
             if (hasReceivedMotorStates && hasReceivedMotorMinAngles && hasReceivedMotorMaxAngles)
             {
+                PrintMatrix(motorCommands, "Initial motor commands");
                 tf2::Quaternion currentTouchOrientation = touchToManipulatorRotation * currentTouchPose.orientation;
                 tf2::Quaternion touchOriginOrientation = touchToManipulatorRotation * touchOriginPose.orientation;
 
@@ -840,11 +890,26 @@ int main(int argc, char **argv)
 
                 PrintMatrix(jointDeltas, "Final joint deltas");
 
-                proximal.ApplyPanAngleDelta(jointDeltas(0));
-                proximal.ApplyTiltAngleDelta(jointDeltas(1));
+                // Prevent joint updates if motors are at their angular limits
+                if ((motorCommands(0) >= motorMinAngles(0) || jointDeltas(0) >= 0) && (motorCommands(0) <= motorMaxAngles(0) || jointDeltas(0) <= 0))
+                {
+                    proximal.ApplyPanAngleDelta(jointDeltas(0));
+                }
 
-                distal.ApplyPanAngleDelta(jointDeltas(2));
-                distal.ApplyTiltAngleDelta(jointDeltas(3));
+                if ((motorCommands(1) >= motorMinAngles(1) || jointDeltas(1) >= 0) && (motorCommands(1) <= motorMaxAngles(1) || jointDeltas(1) <= 0))
+                {
+                    proximal.ApplyTiltAngleDelta(jointDeltas(1));
+                }
+
+                if ((motorCommands(2) >= motorMinAngles(2) || jointDeltas(2) >= 0) && (motorCommands(2) <= motorMaxAngles(2) || jointDeltas(2) <= 0))
+                {
+                    distal.ApplyPanAngleDelta(jointDeltas(2));
+                }
+
+                if ((motorCommands(3) >= motorMinAngles(3) || jointDeltas(3) >= 0) && (motorCommands(3) <= motorMaxAngles(3) || jointDeltas(3) <= 0))
+                {
+                    distal.ApplyTiltAngleDelta(jointDeltas(3));
+                }
 
                 Eigen::Vector4d stateDelta = GetMotorPositionsFromJointPositions(proximal, distal);
 
@@ -864,9 +929,8 @@ int main(int argc, char **argv)
                 motorCommandsMsg.distal_tilt_angle = motorCommands(3);
 
                 motorCommandsPublisher.publish(motorCommandsMsg);
-
-                rate.sleep();
             }
+            rate.sleep();
         }
         else
         {

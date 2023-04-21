@@ -359,7 +359,7 @@ int main(int argc, char **argv)
         ur5ePoseBag.open(ur5eDataPath.str(), rosbag::bagmode::Write);
 
         std::stringstream touchDataPath;
-        touchDataPath << packagePath << "/data/touch/" << dataLabel << ".bag";
+        touchDataPath << packagePath << "/data/touch/" << dataLabel << "_ur5e.bag";
 
         touchStateBag.open(touchDataPath.str(), rosbag::bagmode::Write);
     }
