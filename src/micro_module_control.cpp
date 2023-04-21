@@ -1,6 +1,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <algorithm>
 #include <math.h>
 #include "ros/ros.h"
 #include "std_msgs/Header.h"
@@ -29,10 +30,10 @@
 const double TOUCH_POSITION_UNIT_SCALE_FACTOR = 1e-3;
 
 // Factor by which Touch rotational movements are scaled before being sent to the manipulator
-const double MANIPULATOR_ROTATION_SCALE_FACTOR = 0.2;
+const double MANIPULATOR_ROTATION_SCALE_FACTOR = 0.01;
 
 // Maximum joint velocity for a single update, in metres per second
-const double JOINT_UPDATE_MAX_VELOCITY = 0.001;
+const double JOINT_UPDATE_MAX_VELOCITY = 0.100;
 
 // Maximum error in end-effector pose, in metres
 const double MAX_POSE_ERROR = 0.002;
@@ -365,6 +366,10 @@ Eigen::MatrixXd GetInverseJacobianDamped(
 {
     Eigen::Matrix4d D = Eigen::Matrix4d::Identity();
 
+    PrintMatrix(jointPositions, "Joint positions");
+    PrintMatrix(minJointAngles, "Min joint angles");
+    PrintMatrix(maxJointAngles, "Max joint angles");
+
     double minAngle, maxAngle;
 
     for (int i = 0; i < jointPositions.size(); i++)
@@ -373,11 +378,14 @@ Eigen::MatrixXd GetInverseJacobianDamped(
         maxAngle = maxJointAngles(i);
 
         D(i, i) = pow((2 * jointPositions(i) - maxAngle - minAngle) / (maxAngle - minAngle), 2) + 1;
+        ROS_INFO("lambda value: %.6f", pow((2 * jointPositions(i) - maxAngle - minAngle) / (maxAngle - minAngle), 2) + 1);
     }
+
+    PrintMatrix(D, "D matrix");
 
     Eigen::MatrixXd inverseJacobian(jacobian.cols(), jacobian.rows());
 
-    inverseJacobian = (jacobian.transpose() * jacobian + D.pow(2)).colPivHouseholderQr().solve(jacobian.transpose());
+    inverseJacobian = (jacobian.transpose() * jacobian + D*D).colPivHouseholderQr().solve(jacobian.transpose());
 
     return inverseJacobian;
 }
@@ -559,6 +567,23 @@ void motorStatesCallback(const motor_angles_msg::MotorAngles::ConstPtr& motorSta
     motorStatesCache << motorStates->proximal_pan_angle, motorStates->proximal_tilt_angle, motorStates->distal_pan_angle, motorStates->distal_tilt_angle;
 }
 
+void motorMinAnglesCallback(const motor_angles_msg::MotorAngles::ConstPtr& motorMinAngles, Eigen::VectorXd& motorMinAnglesCache, bool& hasReceivedMotorMinAngles)
+{
+    hasReceivedMotorMinAngles = true;
+    motorMinAnglesCache << motorMinAngles->proximal_pan_angle, motorMinAngles->proximal_tilt_angle, motorMinAngles->distal_pan_angle, motorMinAngles->distal_tilt_angle;
+}
+
+void motorMaxAnglesCallback(const motor_angles_msg::MotorAngles::ConstPtr& motorMaxAngles, Eigen::VectorXd& motorMaxAnglesCache, bool& hasReceivedMotorMaxAngles)
+{
+    hasReceivedMotorMaxAngles = true;
+    motorMaxAnglesCache << motorMaxAngles->proximal_pan_angle, motorMaxAngles->proximal_tilt_angle, motorMaxAngles->distal_pan_angle, motorMaxAngles->distal_tilt_angle;
+}
+
+double clamp(double value, double min, double max)
+{
+    return std::min(std::max(value, min), max);
+}
+
 int main(int argc, char **argv)
 {
     Pose touchOriginPose;
@@ -587,9 +612,13 @@ int main(int argc, char **argv)
     bool isWhiteButtonPressed = false;
 
     bool hasReceivedMotorStates = false;
+    bool hasReceivedMotorMinAngles = false;
+    bool hasReceivedMotorMaxAngles = false;
 
     Eigen::VectorXd motorStates(4);
     Eigen::VectorXd motorCommands(4);
+    Eigen::VectorXd motorMinAngles(4);
+    Eigen::VectorXd motorMaxAngles(4);
 
     ros::Subscriber touchButtonSubscriber = nodeHandle.subscribe<omni_msgs::OmniButtonEvent>(
         "/phantom/button",
@@ -613,6 +642,28 @@ int main(int argc, char **argv)
             boost::ref(motorStates),
             boost::ref(motorCommands),
             boost::ref(hasReceivedMotorStates)
+        )
+    );
+
+    ros::Subscriber motorMinAnglesSubscriber = nodeHandle.subscribe<motor_angles_msg::MotorAngles>(
+        "micro_module_motor_min_angles",
+        1,
+        boost::bind(
+            &motorMinAnglesCallback,
+            _1,
+            boost::ref(motorMinAngles),
+            boost::ref(hasReceivedMotorMinAngles)
+        )
+    );
+
+    ros::Subscriber motorMaxAnglesSubscriber = nodeHandle.subscribe<motor_angles_msg::MotorAngles>(
+        "micro_module_motor_max_angles",
+        1,
+        boost::bind(
+            &motorMaxAnglesCallback,
+            _1,
+            boost::ref(motorMaxAngles),
+            boost::ref(hasReceivedMotorMaxAngles)
         )
     );
 
@@ -679,7 +730,8 @@ int main(int argc, char **argv)
 
     // Fixed transformation quaternion between touch and manipulator frames
     tf2::Quaternion touchToManipulatorRotation;
-    touchToManipulatorRotation.setRPY(0, M_PI, 0);
+    // touchToManipulatorRotation.setRPY(0, M_PI, M_PI_4);
+    touchToManipulatorRotation.setRPY(0, 0, M_PI_4);
 
     Eigen::Vector3d endPosition = Eigen::Vector3d::Zero();
 
@@ -693,100 +745,132 @@ int main(int argc, char **argv)
 
     Eigen::Vector4d minJointAngles;
 
-    minJointAngles << -0.1, -0.1, -0.05, -0.05;
+    minJointAngles << -0.05, -0.05, -0.025, -0.025;
 
     Eigen::Vector4d maxJointAngles;
 
-    maxJointAngles << 0.1, 0.1, -0.05, -0.05;
+    maxJointAngles << 0.05, 0.05, 0.025, 0.025;
 
     Eigen::Vector4d jointPositions;
     jointPositions << proximal.GetPanJointAngle(), proximal.GetTiltJointAngle(), distal.GetPanJointAngle(), distal.GetTiltJointAngle();
 
-    ros::Rate rate(2);
+    ros::Rate rate(10);
 
     while (ros::ok())
     {
+        TransformVector jointTransforms = GetJointTransforms(baseTransform, endEffectorTransform, proximal, distal);
+
+        endPosition = GetTransformPosition(jointTransforms.back());
+        endRotation = GetTransformRotation(jointTransforms.back());
+
         // Enable manipulator teleoperation if user is pressing the grey button on the Touch
-        if (isGreyButtonPressed && hasReceivedMotorStates)
+        if (isGreyButtonPressed)
         {
-            // Update Touch orientation delta (in manipulator coordinate frame)
-            touchPoseDelta.orientation = (touchToManipulatorRotation * currentTouchPose.orientation) * (touchToManipulatorRotation * touchOriginPose.orientation).inverse();
-
-            ROS_INFO_THROTTLE(1, "Touch orientation delta: %s", QuaternionToString(touchPoseDelta.orientation).c_str());
-
-            ROS_INFO_THROTTLE(
-                1,
-                "Current Maniulator Orientation: %s, Manipulator origin orientation: %s",
-                QuaternionToString(manipulatorOrientation).c_str(),
-                QuaternionToString(manipulatorOriginOrientation).c_str()
-            );
-
-            manipulatorOrientation = EigenRotationMatrixToTF2Quaternion(endRotation);
-            manipulatorOriginOrientation = EigenRotationMatrixToTF2Quaternion(endOriginRotation);
-            manipulatorOrientationDelta = manipulatorOrientation * manipulatorOriginOrientation.inverse();
-
-            ROS_INFO_THROTTLE(1, "Manipulator orientation delta: %s", QuaternionToString(manipulatorOrientationDelta).c_str());
-
-            // Final movement orientation delta is difference between Touch and manipulator orientation deltas
-            movementOrientationDelta = touchPoseDelta.orientation * manipulatorOrientationDelta.inverse();
-
-            movementRotation = tf2QuaternionToEigenRotationMatrix(movementOrientationDelta);
-
-            TransformVector jointTransforms = GetJointTransforms(baseTransform, endEffectorTransform, proximal, distal);
-
-            endPosition = GetTransformPosition(jointTransforms.back());
-            endRotation = GetTransformRotation(jointTransforms.back());
-
-            Eigen::MatrixXd jacobian = GetJacobian(jointTransforms, proximal, distal);
-
-            // PrintMatrix(jacobian, "Jacobian");
-
-            jointPositions << proximal.GetPanJointAngle(), proximal.GetTiltJointAngle(), distal.GetPanJointAngle(), distal.GetTiltJointAngle();
-
-            Eigen::MatrixXd inverseJacobian = GetInverseJacobianDamped(jacobian, jointPositions, minJointAngles, maxJointAngles, LEAST_SQUARES_DAMPING_FACTOR);
-
-            // PrintMatrix(inverseJacobian, "Inverse Jacobian");
-
-            Eigen::Vector3d desiredPos = endPosition;
-
-            Eigen::Matrix3d desiredRot = movementRotation * endRotation;
-
-            Eigen::VectorXd poseDelta = GetPoseDelta(endPosition, desiredPos, endRotation, desiredRot);
-
-            // PrintMatrix(poseDelta, "Pose delta");
-
-            if (poseDelta.norm() > JOINT_UPDATE_MAX_VELOCITY)
+            if (hasReceivedMotorStates && hasReceivedMotorMinAngles && hasReceivedMotorMaxAngles)
             {
-                poseDelta = CapVectorMagnitude(poseDelta, JOINT_UPDATE_MAX_VELOCITY).eval();
+                tf2::Quaternion currentTouchOrientation = touchToManipulatorRotation * currentTouchPose.orientation;
+                tf2::Quaternion touchOriginOrientation = touchToManipulatorRotation * touchOriginPose.orientation;
+
+                ROS_INFO("touch orienation: %s", QuaternionToString(currentTouchOrientation).c_str());
+                ROS_INFO("touch origin orientation: %s", QuaternionToString(touchOriginOrientation).c_str());
+
+                // Update Touch orientation delta (in manipulator coordinate frame)
+                touchPoseDelta.orientation = (touchToManipulatorRotation * currentTouchPose.orientation) * (touchToManipulatorRotation * touchOriginPose.orientation).inverse();
+
+                ROS_INFO_THROTTLE(1, "Touch orientation delta: %s", QuaternionToString(touchPoseDelta.orientation).c_str());
+
+                ROS_INFO_THROTTLE(
+                    1,
+                    "Current Maniulator Orientation: %s, Manipulator origin orientation: %s",
+                    QuaternionToString(manipulatorOrientation).c_str(),
+                    QuaternionToString(manipulatorOriginOrientation).c_str()
+                );
+
+                PrintMatrix(endRotation, "End rotation");
+                PrintMatrix(endOriginRotation, "End origin rotation");
+
+                manipulatorOrientation = EigenRotationMatrixToTF2Quaternion(endRotation);
+
+                ROS_INFO("Manipulator orientation: %s", QuaternionToString(manipulatorOrientation).c_str());
+
+                manipulatorOriginOrientation = EigenRotationMatrixToTF2Quaternion(endOriginRotation);
+
+                ROS_INFO("Manipulator origin orientation: %s", QuaternionToString(manipulatorOriginOrientation).c_str());
+
+                manipulatorOrientationDelta = manipulatorOrientation * manipulatorOriginOrientation.inverse();
+
+                ROS_INFO("Manipulator orientation delta: %s", QuaternionToString(manipulatorOrientationDelta).c_str());
+
+                // Final movement orientation delta is difference between Touch and manipulator orientation deltas
+                movementOrientationDelta = manipulatorOrientation.slerp(
+                    touchPoseDelta.orientation * manipulatorOrientationDelta.inverse() * manipulatorOrientation,
+                    MANIPULATOR_ROTATION_SCALE_FACTOR
+                );
+
+                ROS_INFO("Movement orientation delta: %s", QuaternionToString(movementOrientationDelta).c_str());
+
+                movementRotation = tf2QuaternionToEigenRotationMatrix(movementOrientationDelta);
+
+                Eigen::MatrixXd jacobian = GetJacobian(jointTransforms, proximal, distal);
+
+                PrintMatrix(jacobian, "Jacobian");
+
+                jointPositions << proximal.GetPanJointAngle(), proximal.GetTiltJointAngle(), distal.GetPanJointAngle(), distal.GetTiltJointAngle();
+
+                Eigen::MatrixXd inverseJacobian = GetInverseJacobianDamped(jacobian, jointPositions, minJointAngles, maxJointAngles, LEAST_SQUARES_DAMPING_FACTOR);
+
+                PrintMatrix(inverseJacobian, "Inverse Jacobian");
+
+                Eigen::Vector3d desiredPos = endPosition;
+
+                Eigen::Matrix3d desiredRot = movementRotation;
+
+                Eigen::VectorXd poseDelta = GetPoseDelta(endPosition, desiredPos, endRotation, desiredRot);
+
+                PrintMatrix(poseDelta, "Pose delta");
+
+                if (poseDelta.norm() > JOINT_UPDATE_MAX_VELOCITY)
+                {
+                    poseDelta = CapVectorMagnitude(poseDelta, JOINT_UPDATE_MAX_VELOCITY).eval();
+                }
+
+                PrintMatrix(poseDelta, "Capped pose delta");
+
+                Eigen::Vector4d jointDeltas = inverseJacobian * poseDelta;
+
+                PrintMatrix(jointDeltas, "Final joint deltas");
+
+                proximal.ApplyPanAngleDelta(jointDeltas(0));
+                proximal.ApplyTiltAngleDelta(jointDeltas(1));
+
+                distal.ApplyPanAngleDelta(jointDeltas(2));
+                distal.ApplyTiltAngleDelta(jointDeltas(3));
+
+                Eigen::Vector4d stateDelta = GetMotorPositionsFromJointPositions(proximal, distal);
+
+                motorCommands += stateDelta;
+
+                motorCommands(0) = clamp(motorCommands(0), motorMinAngles(0), motorMaxAngles(0));
+                motorCommands(1) = clamp(motorCommands(1), motorMinAngles(1), motorMaxAngles(1));
+                motorCommands(2) = clamp(motorCommands(2), motorMinAngles(2), motorMaxAngles(2));
+                motorCommands(3) = clamp(motorCommands(3), motorMinAngles(3), motorMaxAngles(3));
+
+                ROS_INFO("Sending motor commands: %.6f %.6f %.6f %.6f", motorCommands(0), motorCommands(1), motorCommands(2), motorCommands(3));
+
+                motor_angles_msg::MotorAngles motorCommandsMsg;
+                motorCommandsMsg.proximal_pan_angle = motorCommands(0);
+                motorCommandsMsg.proximal_tilt_angle = motorCommands(1);
+                motorCommandsMsg.distal_pan_angle = motorCommands(2);
+                motorCommandsMsg.distal_tilt_angle = motorCommands(3);
+
+                motorCommandsPublisher.publish(motorCommandsMsg);
+
+                rate.sleep();
             }
-
-            // PrintMatrix(poseDelta, "Capped pose delta");
-
-            Eigen::Vector4d jointDeltas = inverseJacobian * poseDelta;
-
-            // PrintMatrix(jointDeltas, "Final joint deltas");
-
-            proximal.ApplyPanAngleDelta(jointDeltas(0));
-            proximal.ApplyTiltAngleDelta(jointDeltas(1));
-
-            distal.ApplyPanAngleDelta(jointDeltas(2));
-            distal.ApplyTiltAngleDelta(jointDeltas(3));
-
-            Eigen::Vector4d stateDelta = GetMotorPositionsFromJointPositions(proximal, distal);
-
-            motorCommands += stateDelta;
-
-            ROS_INFO("Sending motor commands: %.6f %.6f %.6f %.6f", motorCommands(0), motorCommands(1), motorCommands(2), motorCommands(3));
-
-            motor_angles_msg::MotorAngles motorCommandsMsg;
-            motorCommandsMsg.proximal_pan_angle = motorCommands(0);
-            motorCommandsMsg.proximal_tilt_angle = motorCommands(1);
-            motorCommandsMsg.distal_pan_angle = motorCommands(2);
-            motorCommandsMsg.distal_tilt_angle = motorCommands(3);
-
-            motorCommandsPublisher.publish(motorCommandsMsg);
-
-            rate.sleep();
+        }
+        else
+        {
+            endOriginRotation = endRotation;
         }
 
         ros::spinOnce();
