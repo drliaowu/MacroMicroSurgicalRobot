@@ -175,8 +175,7 @@ geometry_msgs::Point Vector3ToPoint(tf2::Vector3 vector)
 
 void touchStateCallback(
     const omni_msgs::OmniState::ConstPtr& omniState,
-    Pose& currentPose,
-    rosbag::Bag& touchStateBag
+    Pose& currentPose
 )
 {
     tf2::fromMsg(omniState->pose.position, currentPose.position);
@@ -187,11 +186,6 @@ void touchStateCallback(
     tf2::fromMsg(omniState->pose.orientation, currentPose.orientation);
 
     geometry_msgs::Vector3 current = omniState->current;
-
-    if (touchStateBag.isOpen())
-    {
-        touchStateBag.write("/phantom/state", ros::Time::now(), omniState);
-    }
 }
 
 void touchButtonCallback(
@@ -201,8 +195,7 @@ void touchButtonCallback(
     Pose& currentUR5EPose,
     Pose& ur5eOriginPose,
     Pose& currentTouchPose,
-    Pose& touchOriginPose,
-    rosbag::Bag& touchStateBag
+    Pose& touchOriginPose
 )
 {
     // Update control origin poses if white button was just pressed
@@ -217,11 +210,6 @@ void touchButtonCallback(
 
     isGreyButtonPressed = (bool)omniButtonStates->grey_button;
     isWhiteButtonPressed = (bool)omniButtonStates->white_button;
-
-    if (touchStateBag.isOpen())
-    {
-        touchStateBag.write("/phantom/button", ros::Time::now(), omniButtonStates);
-    }
 }
 
 bool LoadController(ros::NodeHandle& nodeHandle, const std::string controllerName)
@@ -341,28 +329,7 @@ int main(int argc, char **argv)
 
     ros::init(argc, argv, "ur5e_control");
 
-    ros::NodeHandle nodeHandle("~");
-
-    rosbag::Bag touchStateBag;
-    rosbag::Bag ur5ePoseBag;
-
-    std::string dataLabel;
-    nodeHandle.getParam("data_label", dataLabel);
-
-    if (dataLabel.length() > 0)
-    {
-        std::string packagePath = ros::package::getPath("ls_thesis");
-
-        std::stringstream ur5eDataPath;
-        ur5eDataPath << packagePath << "/data/ur5e/" << dataLabel << ".bag";
-
-        ur5ePoseBag.open(ur5eDataPath.str(), rosbag::bagmode::Write);
-
-        std::stringstream touchDataPath;
-        touchDataPath << packagePath << "/data/touch/" << dataLabel << "_ur5e.bag";
-
-        touchStateBag.open(touchDataPath.str(), rosbag::bagmode::Write);
-    }
+    ros::NodeHandle nodeHandle;
 
     // Load and switch to the desired UR5e position controller
     LoadController(nodeHandle, UR5E_CONTROLLER_NAME);
@@ -390,8 +357,7 @@ int main(int argc, char **argv)
         boost::bind(
             &touchStateCallback,
             _1,
-            boost::ref(currentTouchPose),
-            boost::ref(touchStateBag)
+            boost::ref(currentTouchPose)
         )
     );
 
@@ -406,8 +372,7 @@ int main(int argc, char **argv)
             boost::ref(currentUR5EPose),
             boost::ref(ur5eOriginPose),
             boost::ref(currentTouchPose),
-            boost::ref(touchOriginPose),
-            boost::ref(touchStateBag)
+            boost::ref(touchOriginPose)
         )
     );
 
@@ -419,11 +384,6 @@ int main(int argc, char **argv)
         try
         {
             TransformStampedToPoseStamped(tfBuffer.lookupTransform("base", "tool0_controller", ros::Time(0)), currentUR5EPoseStamped);
-
-            if (ur5ePoseBag.isOpen())
-            {
-                ur5ePoseBag.write("ur5e_pose", ros::Time::now(), currentUR5EPoseStamped);
-            }
 
             tf2::fromMsg(currentUR5EPoseStamped.pose.position, currentUR5EPose.position);
             tf2::fromMsg(currentUR5EPoseStamped.pose.orientation, currentUR5EPose.orientation);
@@ -533,9 +493,6 @@ int main(int argc, char **argv)
 
         ros::spinOnce();
     }
-
-    touchStateBag.close();
-    ur5ePoseBag.close();
 
     return 0;
 }

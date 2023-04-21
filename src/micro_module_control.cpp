@@ -507,8 +507,7 @@ Eigen::VectorXd CapVectorMagnitude(const Eigen::VectorXd& vector, const double m
 
 void touchStateCallback(
     const omni_msgs::OmniState::ConstPtr& omniState,
-    Pose& currentPose,
-    rosbag::Bag& touchStateBag
+    Pose& currentPose
 )
 {
     tf2::fromMsg(omniState->pose.position, currentPose.position);
@@ -519,11 +518,6 @@ void touchStateCallback(
     tf2::fromMsg(omniState->pose.orientation, currentPose.orientation);
 
     geometry_msgs::Vector3 current = omniState->current;
-
-    if (touchStateBag.isOpen())
-    {
-        touchStateBag.write("/phantom/state", ros::Time::now(), omniState);
-    }
 }
 
 void touchButtonCallback(
@@ -531,8 +525,7 @@ void touchButtonCallback(
     bool& isGreyButtonPressed,
     bool& isWhiteButtonPressed,
     Pose& currentTouchPose,
-    Pose& touchOriginPose,
-    rosbag::Bag& touchStateBag
+    Pose& touchOriginPose
 )
 {
     // Update control origin poses if white button was just pressed
@@ -544,11 +537,6 @@ void touchButtonCallback(
 
     isGreyButtonPressed = (bool)omniButtonStates->grey_button;
     isWhiteButtonPressed = (bool)omniButtonStates->white_button;
-
-    if (touchStateBag.isOpen())
-    {
-        touchStateBag.write("/phantom/button", ros::Time::now(), omniButtonStates);
-    }
 }
 
 tf2::Quaternion EigenRotationMatrixToTF2Quaternion(const Eigen::Matrix3d& rotation)
@@ -572,8 +560,7 @@ void motorStatesCallback(
     const motor_angles_msg::MotorAngles::ConstPtr& motorStates,
     Eigen::VectorXd& motorStatesCache,
     Eigen::VectorXd& motorCommands,
-    bool& hasReceivedMotorStates,
-    rosbag::Bag& motorAnglesBag
+    bool& hasReceivedMotorStates
 )
 {
     motorStatesCache << motorStates->proximal_pan_angle, motorStates->proximal_tilt_angle, motorStates->distal_pan_angle, motorStates->distal_tilt_angle;
@@ -585,11 +572,6 @@ void motorStatesCallback(
     }
 
     hasReceivedMotorStates = true;
-
-    if (motorAnglesBag.isOpen())
-    {
-        motorAnglesBag.write("micro_module_motor_states", ros::Time::now(), motorStates);
-    }
 }
 
 void motorMinAnglesCallback(const motor_angles_msg::MotorAngles::ConstPtr& motorMinAngles, Eigen::VectorXd& motorMinAnglesCache, bool& hasReceivedMotorMinAngles)
@@ -621,28 +603,7 @@ int main(int argc, char **argv)
     Pose touchPoseDelta;
 
     ros::init(argc, argv, "micro_module_control");
-    ros::NodeHandle nodeHandle("~");
-
-    rosbag::Bag touchStateBag;
-    rosbag::Bag motorAnglesBag;
-
-    std::string dataLabel;
-    nodeHandle.getParam("data_label", dataLabel);
-
-    if (dataLabel.length() > 0)
-    {
-        std::string packagePath = ros::package::getPath("ls_thesis");
-
-        std::stringstream microModuleDataPath;
-        microModuleDataPath << packagePath << "/data/micro_module/" << dataLabel << ".bag";
-
-        motorAnglesBag.open(microModuleDataPath.str(), rosbag::bagmode::Write);
-
-        std::stringstream touchDataPath;
-        touchDataPath << packagePath << "/data/touch/" << dataLabel << "_micro_module.bag";
-
-        touchStateBag.open(touchDataPath.str(), rosbag::bagmode::Write);
-    }
+    ros::NodeHandle nodeHandle;
 
     ros::Subscriber touchStateSubscriber = nodeHandle.subscribe<omni_msgs::OmniState>(
         "/phantom/state",
@@ -650,8 +611,7 @@ int main(int argc, char **argv)
         boost::bind(
             &touchStateCallback,
             _1,
-            boost::ref(currentTouchPose),
-            boost::ref(touchStateBag)
+            boost::ref(currentTouchPose)
         )
     );
 
@@ -676,8 +636,7 @@ int main(int argc, char **argv)
             boost::ref(isGreyButtonPressed),
             boost::ref(isWhiteButtonPressed),
             boost::ref(currentTouchPose),
-            boost::ref(touchOriginPose),
-            boost::ref(touchStateBag)
+            boost::ref(touchOriginPose)
         )
     );
 
@@ -689,8 +648,7 @@ int main(int argc, char **argv)
             _1,
             boost::ref(motorStates),
             boost::ref(motorCommands),
-            boost::ref(hasReceivedMotorStates),
-            boost::ref(motorAnglesBag)
+            boost::ref(hasReceivedMotorStates)
         )
     );
 
