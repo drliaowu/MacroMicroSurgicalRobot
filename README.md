@@ -1,7 +1,7 @@
 # A Low-Cost Teleoperable Surgical Robot with a Macro-Micro Structure for Open-Source Research
 ROS package providing simultaneous teleoperation of a custom micro-manipulator and a Universal Robots UR5e robotic arm via a 3D Systems Touch haptic stylus.
 
-## Setup Steps
+## Installation
 
 1. Install Ubuntu 20.04 LTS
 4. Apply a patch to install a real-time kernel on your Linux system. The exact version used to develop the project was 5.15.96-rt61. Instructions can be found [here](https://github.com/UniversalRobots/Universal_Robots_ROS_Driver/blob/master/ur_robot_driver/doc/real_time.md).
@@ -31,5 +31,30 @@ mkdir catkin_ws && cd catkin_ws
     sudo ln -s /usr/lib64/libHD.so.3.0.0 /usr/lib/libHD.so.3.0
     sudo ln -s /usr/lib64/libHL.so.3.0.0 /usr/lib/libHL.so.3.0 
     ```
+Note: Run `./Touch_Setup` and `./Touch_Diagnostic` found in the touch driver directory, with the Touch device connected, to verify that Touch communication is functional.
 12. Clone this repository into your catkin workspace.
 13. Build and source your catkin workspace using `catkin build`.
+
+# ROS Startup Commands
+## Touch Stylus
+1. Start ROS: `roscore`
+
+2. Add permissions for touch USB device: `sudo chmod 777 /dev/ttyACM0`
+
+3. Start Touch Driver: `roslaunch omni_common omni_state.launch`
+
+## UR5e
+1. Start driver: `roslaunch ur_robot_driver ur5e_bringup.launch robot_ip:=192.168.0.100  kinematics_config:=/home/lachlan/lab_ur5e_1_calibration.yaml`
+
+2. Start LS_ROS_CONTROL program on UR5e Teach Pendant
+
+3. Start control node: `rosrun ls_thesis ur5e_control`
+
+## Micro Module
+1. Add permissions for Arduino device: `sudo chmod 777 /dev/ttyACM1`
+
+2. Start serial node: `rosrun rosserial_python serial_node.py /dev/ttyACM1`
+
+3. Start control node: `rosrun ls_thesis micro_module_control`
+
+NOTE: Be sure to manually disable power to servo motors via the switch on the micro module before unplugging the control USB cable
