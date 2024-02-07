@@ -36,21 +36,21 @@ Note: Run `./Touch_Setup` and `./Touch_Diagnostic` found in the touch driver dir
 13. Build and source your catkin workspace using `catkin build`.
 
 # ROS Startup Commands
-## Touch Stylus
+### Touch Stylus
 1. Start ROS: `roscore`
 
 2. Add permissions for touch USB device: `sudo chmod 777 /dev/ttyACM0`
 
 3. Start Touch Driver: `roslaunch omni_common omni_state.launch`
 
-## UR5e
+### UR5e
 1. Start driver: `roslaunch ur_robot_driver ur5e_bringup.launch robot_ip:=192.168.0.100  kinematics_config:=/home/lachlan/lab_ur5e_1_calibration.yaml`
 
 2. Start LS_ROS_CONTROL program on UR5e Teach Pendant
 
 3. Start control node: `rosrun ls_thesis ur5e_control`
 
-## Micro Module
+### Micro Module
 1. Add permissions for Arduino device: `sudo chmod 777 /dev/ttyACM1`
 
 2. Start serial node: `rosrun rosserial_python serial_node.py /dev/ttyACM1`
