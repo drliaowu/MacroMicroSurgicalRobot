@@ -35,6 +35,8 @@ Note: Run `./Touch_Setup` and `./Touch_Diagnostic` found in the touch driver dir
 12. Clone this repository into your catkin workspace.
 13. Build and source your catkin workspace using `catkin build`.
 
+> Thanks to Mustafa Sevinc for writing the original installation instructions.
+
 # ROS Startup Commands
 ### Touch Stylus
 1. Start ROS: `roscore`
