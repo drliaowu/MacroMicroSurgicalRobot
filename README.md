@@ -37,7 +37,7 @@ Note: Run `./Touch_Setup` and `./Touch_Diagnostic` found in the touch driver dir
 
 > Thanks to Mustafa Sevinc for writing the original installation instructions.
 
-# ROS Startup Commands
+## ROS Startup Commands
 ### Touch Stylus
 1. Start ROS: `roscore`
 
