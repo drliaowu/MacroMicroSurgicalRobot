@@ -31,9 +31,10 @@ mkdir catkin_ws && cd catkin_ws
     sudo ln -s /usr/lib64/libHD.so.3.0.0 /usr/lib/libHD.so.3.0
     sudo ln -s /usr/lib64/libHL.so.3.0.0 /usr/lib/libHL.so.3.0 
     ```
-Note: Run `./Touch_Setup` and `./Touch_Diagnostic` found in the touch driver directory, with the Touch device connected, to verify that Touch communication is functional.
-12. Clone this repository into your catkin workspace.
-13. Build and source your catkin workspace using `catkin build`.
+    Note: Run `./Touch_Setup` and `./Touch_Diagnostic` found in the touch driver directory, with the Touch device connected, to verify that Touch communication is functional.
+
+    12. Clone this repository into your catkin workspace.
+    13. Build and source your catkin workspace using `catkin build`.
 
 > Thanks to Mustafa Sevinc for writing the original installation instructions.
 
