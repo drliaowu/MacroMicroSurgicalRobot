@@ -2,6 +2,7 @@
 ROS package providing simultaneous teleoperation of a custom micro-manipulator and a Universal Robots UR5e robotic arm via a 3D Systems Touch haptic stylus.
 
 Additional dependencies and their installation instructions can be found in these repositories:
+
 [https://github.com/LMBScott/motor_angles_msg/](https://github.com/LMBScott/motor_angles_msg/)
 
 [https://github.com/LMBScott/Serial_Control/](https://github.com/LMBScott/Serial_Control/)
