@@ -3,6 +3,7 @@ ROS package providing simultaneous teleoperation of a custom micro-manipulator a
 
 Additional dependencies and their installation instructions can be found in these repositories:
 [https://github.com/LMBScott/motor_angles_msg/](https://github.com/LMBScott/motor_angles_msg/)
+
 [https://github.com/LMBScott/Serial_Control/](https://github.com/LMBScott/Serial_Control/)
 
 ## Installation
